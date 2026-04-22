@@ -1,0 +1,18 @@
+{
+  "name": "debate",
+  "display_name": "辩论赛",
+  "default_rounds": 4,
+  "opening": {
+    "speaker": "moderator",
+    "extra_instruction": "今天的辩题是：「{topic}」。请你以主持人身份开场，介绍正方和反方的立场，说明辩论赛四轮规则（第一轮：开篇立论；第二轮：深化论点；第三轮：攻辩驳论；第四轮：总结陈词），宣布发言顺序，然后请正方一辩进行开篇立论。"
+  },
+  "rounds": {
+    "configurable": false,
+    "speaking_order": ["pro_1", "con_1", "pro_2", "con_2", "pro_3", "con_3", "con_4", "pro_4"],
+    "summary": {
+      "speaker": "moderator",
+      "mid_template": "第 {round} 轮结束。请总结本轮双方的核心论点与攻防要点，指出关键分歧，并引导第 {next_round} 轮深入。",
+      "final_template": "辩论结束。请综合全场四轮表现，客观评述双方论证的优劣，提炼出最有价值的观点，并给出你的最终判断。"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "six_hat",
+  "opening": {
+    "speaker": "blue",
+    "extra_instruction": "今天的讨论话题是：「{topic}」。请你以主持人身份开场，介绍六顶帽子各自的角色，然后宣布讨论开始。"
+  },
+  "rounds": {
+    "configurable": true,
+    "min": 1,
+    "max": 10,
+    "speaking_order": ["white", "red", "black", "yellow", "green"],
+    "summary": {
+      "speaker": "blue",
+      "mid_template": "第 {round} 轮讨论结束。请总结本轮核心观点，指出主要分歧，并为第 {next_round} 轮给出新的讨论焦点。",
+      "final_template": "这是最后一轮讨论，请做最终综合总结，提炼最有价值的洞见，给出你的结论。"
+    }
+  }
+}
