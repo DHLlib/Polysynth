@@ -35,10 +35,12 @@ def _build_tool_system_msg(role_key: str, tools: list[dict]) -> str:
         "",
         tool_desc,
         "",
-        "使用规范：",
+        "使用规范（必须遵守）：",
         "1. 当任务需要超出你已有知识的信息时，必须主动调用工具",
-        "2. 不要编造数据或事实，有疑虑时优先调用工具验证",
-        "3. 调用工具后等待返回结果，再继续发言",
+        "2. 严禁编造数据、案例或事实。如果你提到'数据显示'、'研究表明'、'根据调查'等表述，必须先调用工具获取真实数据",
+        "3. 不要假装已经搜索过或已经知道某些数据——如果你不确定，就必须调用工具",
+        "4. 调用工具后等待返回结果，再继续发言",
+        "5. 违反以上规范会导致回答被视为无效",
     ]
     guide = _TOOL_ROLE_GUIDES.get(role_key)
     if guide:
@@ -120,6 +122,9 @@ class SixHatRunner:
         if tool_system_msg:
             messages.insert(0, {"role": "system", "content": tool_system_msg})
         messages.extend(session.get_history())
+        # 最后一道防线：在 user message 中明确提醒使用工具
+        if tools:
+            messages.append({"role": "user", "content": "注意：如果你需要引用数据、事实或最新信息，必须先调用可用工具获取真实信息，严禁编造。"})
 
         logger.info(f"Role speak: {role_key}, model={participant['model']}, history={len(messages)}")
         yield TurnStartEvent(
