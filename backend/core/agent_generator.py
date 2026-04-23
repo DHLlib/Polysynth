@@ -5,6 +5,7 @@ LLM 调用层。只负责异步流式调用，不处理打印、历史或 sessio
 """
 
 import json
+import re
 
 from litellm import acompletion
 
@@ -16,6 +17,20 @@ logger = get_logger("agent_generator")
 
 # 单次 Session 内缓存 provider 配置，避免重复查库
 _provider_cache: dict[str, dict] = {}
+
+
+# DeepSeek 模型在工具调用后可能输出的 DSML 标记正则
+_DSML_BLOCK_RE = re.compile(r"<｜DSML｜[^>]*>.*?</｜DSML｜[^>]*>", re.DOTALL)
+_DSML_START_RE = re.compile(r"<｜DSML｜[^>]*>")
+
+
+def _strip_dsml_tags(text: str) -> str:
+    """移除 DeepSeek DSML 工具调用标记，避免前端显示乱码。"""
+    # 先尝试匹配完整块
+    cleaned = _DSML_BLOCK_RE.sub("", text)
+    # 再兜底移除未闭合的开始标签
+    cleaned = _DSML_START_RE.sub("", cleaned)
+    return cleaned
 
 
 def clear_provider_cache() -> None:
@@ -124,7 +139,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
 
     kwargs = {
         "model": model,
-        "temperature": 0.8,
+        "temperature": 0.3,
         "timeout": 180,
     }
 
@@ -166,7 +181,14 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             msg = response.choices[0].message
 
             tc_list = getattr(msg, "tool_calls", None)
-            logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={len(tc_list) if tc_list else 0}, content={msg.content[:80] if msg.content else '(none)'}...")
+            tc_count = len(tc_list) if tc_list else 0
+            if tc_list:
+                tc_details = ", ".join(
+                    f"{tc.function.name}({tc.function.arguments})" for tc in tc_list
+                )
+                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={tc_count}, details=[{tc_details}], content={msg.content[:80] if msg.content else '(none)'}...")
+            else:
+                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={msg.content[:80] if msg.content else '(none)'}...")
             if tc_list:
                 # 执行工具
                 tool_results = []
@@ -219,13 +241,17 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
 
                 # 阶段二：流式输出最终答案
                 logger.info(f"[LLM·Tools·Phase2] model={model}, messages={len(phase2_messages)}")
-                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True}
+                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True, "tool_choice": "none"}
                 response2 = await acompletion(**phase2_kwargs)
                 full_reply = ""
                 async for chunk in response2:
                     delta = chunk.choices[0].delta.content or ""
-                    yield delta
-                    full_reply += delta
+                    # 过滤 DeepSeek 可能混入的 DSML 工具调用标记
+                    if "<｜DSML｜" in delta:
+                        delta = _strip_dsml_tags(delta)
+                    if delta:
+                        yield delta
+                        full_reply += delta
 
                 # 将工具调用上下文写入 session history，确保后续轮次可见
                 tool_summary = "\n\n".join(
