@@ -64,10 +64,20 @@ export interface GlobalHost {
   color: string;
 }
 
+export interface Attachment {
+  id: number;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  summary: string | null;
+  created_at: string;
+}
+
 export interface SessionCreate {
   mode: "six_hat" | "debate";
   topic: string;
   rounds?: number;
+  files?: File[];
 }
 
 export interface StreamingMessage {
