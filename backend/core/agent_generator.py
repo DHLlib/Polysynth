@@ -139,7 +139,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
 
     kwargs = {
         "model": model,
-        "temperature": 0.3,
+        "temperature": 0.3 if tools else 0.8,
         "timeout": 180,
     }
 
