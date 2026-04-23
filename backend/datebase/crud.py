@@ -19,6 +19,7 @@ from backend.datebase.models import (
     Provider,
     ProviderModel,
     GlobalHost,
+    Attachment,
 )
 
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
@@ -347,6 +348,38 @@ async def append_message(
     await db.commit()
     await db.refresh(msg)
     return msg
+
+
+# ── Attachment ──
+
+async def create_attachment(
+    db: AsyncSession,
+    session_id: str,
+    filename: str,
+    file_type: str,
+    file_size: int,
+    storage_path: str,
+    summary: str | None = None,
+) -> Attachment:
+    att = Attachment(
+        session_id=session_id,
+        filename=filename,
+        file_type=file_type,
+        file_size=file_size,
+        storage_path=storage_path,
+        summary=summary,
+    )
+    db.add(att)
+    await db.flush()
+    await db.refresh(att)
+    return att
+
+
+async def get_attachments_by_session(db: AsyncSession, session_id: str) -> list[Attachment]:
+    result = await db.execute(
+        select(Attachment).where(Attachment.session_id == session_id)
+    )
+    return list(result.scalars().all())
 
 
 # ── Seed ──
