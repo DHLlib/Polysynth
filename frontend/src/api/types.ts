@@ -6,6 +6,7 @@ export interface Participant {
   color: string | null;
   system_prompt: string;
   sort_order: number;
+  tools_enabled: string | null;
 }
 
 export interface ModeConfig {

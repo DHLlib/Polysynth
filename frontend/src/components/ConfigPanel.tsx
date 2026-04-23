@@ -91,7 +91,8 @@ export default function ConfigPanel({ mode, open, onClose }: Props) {
         p.name !== o.name ||
         p.model !== o.model ||
         p.color !== o.color ||
-        p.system_prompt !== o.system_prompt
+        p.system_prompt !== o.system_prompt ||
+        p.tools_enabled !== o.tools_enabled
       ) {
         changed.add(p.id);
       }
@@ -125,6 +126,7 @@ export default function ConfigPanel({ mode, open, onClose }: Props) {
       if (p.model !== o.model) data.model = p.model;
       if (p.color !== o.color) data.color = p.color;
       if (p.system_prompt !== o.system_prompt) data.system_prompt = p.system_prompt;
+      if (p.tools_enabled !== o.tools_enabled) data.tools_enabled = p.tools_enabled;
       if (Object.keys(data).length > 0) {
         tasks.push(updateParticipant(p.id, data));
       }
@@ -440,6 +442,28 @@ function SeatTab({
                 className="w-full bg-bg-primary border border-border rounded px-3 py-1.5 text-sm text-text-secondary focus:outline-none focus:border-accent"
               />
             )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-text-muted block">工具</label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(() => {
+                  try {
+                    return JSON.parse(p.tools_enabled || "[]").includes("search");
+                  } catch {
+                    return false;
+                  }
+                })()}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  onChange(p.id, "tools_enabled", enabled ? JSON.stringify(["search"]) : "");
+                }}
+                className="w-4 h-4 rounded border-border accent-accent"
+              />
+              <span className="text-sm text-text-secondary">启用搜索（DuckDuckGo）</span>
+            </label>
           </div>
 
           <div className="space-y-2">
