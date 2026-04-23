@@ -124,3 +124,15 @@ class GlobalHostUpdate(BaseModel):
     name: Optional[str] = None
     model: Optional[str] = None
     system_prompt: Optional[str] = None
+
+
+class AttachmentOut(BaseModel):
+    id: int
+    filename: str
+    file_type: str
+    file_size: int
+    summary: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
