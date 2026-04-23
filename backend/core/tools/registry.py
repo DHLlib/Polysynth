@@ -2,8 +2,11 @@
 # -*- coding:utf-8 -*-
 """工具注册表。"""
 
+from backend.core.logger import get_logger
 from backend.core.tools.schema import ToolSchema
 from backend.core.tools.search import search_web
+
+logger = get_logger("tools.registry")
 
 
 _REGISTERED_TOOLS: dict[str, ToolSchema] = {

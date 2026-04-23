@@ -66,10 +66,12 @@ class RuntimeConfig:
             host_keys.add(cfg.mode_json["rounds"]["summary"]["speaker"])
         for rk in host_keys:
             if rk in participants:
+                original = participants[rk]
                 participants[rk] = {
                     "model": host.model,
                     "name": host.name,
                     "color": host.color,
+                    "tools_enabled": original.get("tools_enabled"),
                 }
                 # system_prompt 保留各模式自己的，不覆盖
 

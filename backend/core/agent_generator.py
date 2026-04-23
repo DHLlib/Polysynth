@@ -221,15 +221,26 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 logger.info(f"[LLM·Tools·Phase2] model={model}, messages={len(phase2_messages)}")
                 phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True}
                 response2 = await acompletion(**phase2_kwargs)
+                full_reply = ""
                 async for chunk in response2:
                     delta = chunk.choices[0].delta.content or ""
                     yield delta
+                    full_reply += delta
+
+                # 将工具调用上下文写入 session history，确保后续轮次可见
+                tool_summary = "\n\n".join(
+                    f"[{tr['name']} 结果]\n{tr['content'][:300]}"
+                    for tr in tool_results
+                )
+                history_entry = f"{full_reply}\n\n【工具调用记录】\n{tool_summary}"
+                session.add_history("assistant", history_entry)
                 return
 
             # LLM 直接回答了，没有调用工具
             logger.info(f"[LLM·Tools] model={model}, no tool_calls, direct reply")
             if msg.content:
-                yield msg.content
+                for ch in msg.content:
+                    yield ch
             return
 
         except Exception as e:

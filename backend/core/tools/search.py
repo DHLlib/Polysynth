@@ -22,9 +22,13 @@ def _search_sync(query: str, max_results: int) -> list[dict]:
 
 async def search_web(query: str, max_results: int = 5) -> str:
     """使用 DuckDuckGo 搜索网页。"""
+    max_results = max(1, min(max_results, 20))
     logger.info(f"Search start: query='{query}', max_results={max_results}")
     try:
-        results = await asyncio.to_thread(_search_sync, query, max_results)
+        results = await asyncio.wait_for(
+            asyncio.to_thread(_search_sync, query, max_results),
+            timeout=15.0,
+        )
         if not results:
             logger.info("Search end: no results")
             return "未找到相关搜索结果。"
