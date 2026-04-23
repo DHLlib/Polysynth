@@ -75,9 +75,10 @@ async def list_providers(db: AsyncSession = Depends(get_db)):
 
 @router.post("/providers", response_model=ProviderOut, status_code=201)
 async def add_provider(body: ProviderCreate, db: AsyncSession = Depends(get_db)):
+    result = await create_provider(db, body.name, body.api_key, body.base_url)
     clear_provider_cache()
     logger.info(f"Provider created: {body.name}")
-    return await create_provider(db, body.name, body.api_key, body.base_url)
+    return result
 
 
 @router.patch("/providers/{provider_id}", response_model=ProviderOut)

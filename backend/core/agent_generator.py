@@ -24,6 +24,61 @@ def clear_provider_cache() -> None:
     logger.info("Provider cache cleared")
 
 
+async def _summarize_search_query(
+    topic: str,
+    history: list[dict],
+    original_query: str,
+    model: str,
+    api_key: str | None = None,
+    api_base: str | None = None,
+) -> str:
+    """根据话题和讨论历史，用 AI 优化搜索关键词。"""
+    recent = history[-5:] if history else []
+    history_text = "\n".join(
+        f"{m['role']}: {str(m.get('content', ''))[:200]}"
+        for m in recent
+    )
+
+    summarize_messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是搜索关键词优化专家。根据讨论话题、讨论历史和原始搜索意图，"
+                "生成最精准、最简洁的搜索关键词。只输出关键词，不要加任何解释、标点或格式。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"话题：{topic}\n\n"
+                f"讨论历史：\n{history_text}\n\n"
+                f"原始搜索意图：{original_query}\n\n"
+                "请生成优化后的搜索关键词（不超过30字）："
+            ),
+        },
+    ]
+
+    llm_kwargs = {
+        "model": model,
+        "messages": summarize_messages,
+        "temperature": 0.3,
+        "stream": False,
+    }
+    if api_key:
+        llm_kwargs["api_key"] = api_key
+    if api_base:
+        llm_kwargs["api_base"] = api_base
+
+    try:
+        resp = await acompletion(**llm_kwargs)
+        query = resp.choices[0].message.content.strip().strip('"\'').strip()
+        logger.info(f"[SearchQuery] original='{original_query}' -> optimized='{query}'")
+        return query if query else original_query
+    except Exception as e:
+        logger.warning(f"Search query summarization failed: {e}, fallback to original")
+        return original_query
+
+
 async def _resolve_provider(model: str) -> dict:
     """通过 model 名称从数据库查询对应的 provider 配置。"""
     if model in _provider_cache:
@@ -115,7 +170,25 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                     fn = tc.function
                     args = json.loads(fn.arguments) if fn.arguments else {}
                     logger.info(f"[ToolCall] {fn.name} args={args}")
-                    result = await execute_tool(fn.name, args)
+
+                    # search 工具：先由 AI 根据 topic + history 优化搜索关键词
+                    if fn.name == "search":
+                        topic = session.load("topic") or ""
+                        history = session.get_history()
+                        original_query = args.get("query", "")
+                        optimized = await _summarize_search_query(
+                            topic=topic,
+                            history=history,
+                            original_query=original_query,
+                            model=kwargs.get("model"),
+                            api_key=kwargs.get("api_key"),
+                            api_base=kwargs.get("api_base"),
+                        )
+                        args["query"] = optimized
+                        result = await execute_tool(fn.name, args)
+                    else:
+                        result = await execute_tool(fn.name, args)
+
                     logger.info(f"[ToolResult] {fn.name} result_len={len(result)}")
                     logger.debug(f"[ToolResult·Detail] {result[:500]}...")
                     tool_results.append({

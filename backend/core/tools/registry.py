@@ -34,11 +34,13 @@ def get_tool_schemas(enabled_names: list[str] | None = None) -> list[dict]:
     """获取启用的工具 OpenAI schema 列表。"""
     if enabled_names is None:
         enabled_names = list(_REGISTERED_TOOLS.keys())
-    return [
-        _REGISTERED_TOOLS[name].to_openai_schema()
-        for name in enabled_names
-        if name in _REGISTERED_TOOLS
-    ]
+    schemas = []
+    for name in enabled_names:
+        if name in _REGISTERED_TOOLS:
+            schemas.append(_REGISTERED_TOOLS[name].to_openai_schema())
+        else:
+            logger.warning(f"Unknown tool requested: {name}")
+    return schemas
 
 
 async def execute_tool(name: str, arguments: dict) -> str:

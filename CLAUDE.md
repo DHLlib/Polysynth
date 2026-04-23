@@ -92,6 +92,12 @@ Polysynth_v2/
 │   │   ├── config.py           # Config 文件单例（CLI 兼容）
 │   │   ├── runtime_config.py   # RuntimeConfig 运行时配置（Web 模式）
 │   │   ├── output_handlers.py  # TerminalOutputHandler + WebSocketOutputHandler
+│   │   ├── logger.py           # 统一日志配置（console + 文件轮转）
+│   │   ├── tools/              # Agent 工具层
+│   │   │   ├── __init__.py     # 导出 get_tool_schemas, execute_tool
+│   │   │   ├── schema.py       # ToolSchema dataclass
+│   │   │   ├── registry.py     # 工具注册表
+│   │   │   └── search.py       # DuckDuckGo 搜索工具
 │   │   └── modes/              # 模式执行器
 │   │       ├── base.py         # ModeRunner Protocol
 │   │       ├── registry.py     # 模式注册表 get_runner(mode_name)
@@ -116,8 +122,8 @@ Polysynth_v2/
 │   ├── vite.config.ts
 │   └── tsconfig.app.json
 ├── sessions/                   # 运行时生成（session jsonl + state）
-├── polysynth.db                # SQLite 数据库（运行时生成，gitignore）
-└── test_kimi_code.py           # Kimi API 连通性测试
+├── logs/                       # 运行时日志（gitignore）
+└── polysynth.db                # SQLite 数据库（运行时生成，gitignore）
 ```
 
 ### 数据流
@@ -170,6 +176,15 @@ WebSocket handler
 - **ModeRunner 协议**：所有模式实现统一接口 `run(session) -> AsyncIterator<StreamEvent>`。模式规则纯数据化（`config/modes/*.json`），执行器负责编排。
 - **StreamEvent**：类型化事件流（`TurnStartEvent`, `TokenEvent`, `TurnEndEvent`, `BannerEvent`, `SessionEndEvent`），消费方（终端/WebSocket）自行处理。
 - **call_llm() 纯 IO**：只负责 LLM 网络请求和 yield token，不打印、不记录、不管理历史。
+- **Agent Tools（工具调用）**：
+  - 每个角色的 `tools_enabled` 字段存储 JSON 数组（如 `["search"]`），控制该角色是否启用工具
+  - 当前实现 `search` 工具，使用 DuckDuckGo 免费搜索 API
+  - 工具调用采用**双阶段**设计：阶段一非流式检测 `tool_calls` → 执行工具 → 阶段二流式输出最终答案
+  - `search_web` 通过 `asyncio.to_thread()` 在线程池中执行，避免阻塞事件循环
+- **统一日志模块**（`backend/core/logger.py`）：
+  - 同时输出到控制台和 `logs/app.log`
+  - `TimedRotatingFileHandler` 按天轮转，保留 7 天
+  - 支持 `LOG_LEVEL` 环境变量调整级别（默认 INFO）
 - **Config 双轨制**：
   - `Config`（`backend/core/config.py`）：文件单例，CLI 模式使用
   - `RuntimeConfig`（`backend/core/runtime_config.py`）：运行时从数据库加载，Web 模式使用
@@ -210,3 +225,5 @@ CLI 兼容：如果数据库中未找到 provider，回退到 `Config` 单例的
 - **颜色编码兼容性**：前端使用 Hex 颜色（`#RRGGBB`），CLI 使用 ANSI 转义码（`[3Xm`）。`frontend/src/lib/colors.ts` 提供 `ansiToHex()` 和 `hexToAnsi()` 双向转换，使用 16 色映射表 + 欧氏距离最近匹配作为 fallback。
 - **辩论赛角色清理**：`seed_db_from_files()` 在 upsert 新参与者后会**删除当前模式中不在配置文件里的旧角色**。删除 `polysynth.db` 重启后端即可自动清理（如移除旧版遗留的"正方"/"反方"角色）。
 - **轮次配置的元数据驱动**：`mode_json.rounds.configurable` 控制轮次是否可在前端调整。`six_hat` 设为 `true`（1~10 轮可调），`debate` 设为 `false`（固定 4 轮）。前端 Header 和 Session 创建接口均遵守此标志。
+- **`tools_enabled` 脏数据防护**：`six_hat.py` 和 `debate.py` 在解析 `tools_enabled` JSON 时加了 `try/except`，避免脏数据导致讨论崩溃。
+- **日志级别环境变量**：设置 `LOG_LEVEL=DEBUG` 可开启 DEBUG 级别日志（默认 INFO），无需修改代码。

@@ -1,0 +1,148 @@
+[2026-04-23 19:58:53] [INFO] api.main: API startup: initializing database
+[2026-04-23 19:58:53] [INFO] api.main: API startup: seed complete
+[2026-04-23 19:58:54] [INFO] api.sessions: Create session: d53ca6d4cefc4a2d81e2bd4a826736f8, mode=six_hat, topic=test logging
+[2026-04-23 19:58:54] [INFO] api.sessions: Session record created: d53ca6d4cefc4a2d81e2bd4a826736f8, rounds=3
+[2026-04-23 20:05:25] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:05:25] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:06:17] [INFO] api.sessions: Create session: 809f5b6e94b64eae94a7bb6eeacee8ea, mode=six_hat, topic=作为一个一线工程师，被老板直接越级管辖，应该如何处理？
+[2026-04-23 20:06:17] [INFO] api.sessions: Session record created: 809f5b6e94b64eae94a7bb6eeacee8ea, rounds=3
+[2026-04-23 20:06:17] [INFO] api.sessions: WebSocket connect: 809f5b6e94b64eae94a7bb6eeacee8ea
+[2026-04-23 20:06:17] [INFO] session: Session init: 809f5b6e94b64eae94a7bb6eeacee8ea, history_len=0
+[2026-04-23 20:06:17] [INFO] session: Session run start: 809f5b6e94b64eae94a7bb6eeacee8ea, mode=six_hat, topic=作为一个一线工程师，被老板直接越级管辖，应该如何处理？, rounds=3
+[2026-04-23 20:06:17] [INFO] modes.six_hat: SixHat start: topic=作为一个一线工程师，被老板直接越级管辖，应该如何处理？, rounds=3
+[2026-04-23 20:06:17] [INFO] modes.six_hat: Role speak: blue, model=deepseek/deepseek-reasoner, history=1
+[2026-04-23 20:06:17] [INFO] agent_generator: Provider resolved: deepseek/deepseek-reasoner -> deepseek
+[2026-04-23 20:06:17] [INFO] agent_generator: [LLM] model=deepseek/deepseek-reasoner, messages=1
+[2026-04-23 20:06:20] [INFO] modes.six_hat: Role end: blue, content_len=212
+[2026-04-23 20:06:20] [INFO] session: TurnEnd: blue, content_len=212
+[2026-04-23 20:06:20] [INFO] modes.six_hat: SixHat round 1/3
+[2026-04-23 20:06:20] [INFO] modes.six_hat: Tools enabled for white: ['search']
+[2026-04-23 20:06:20] [INFO] modes.six_hat: Role speak: white, model=deepseek/deepseek-chat, history=2
+[2026-04-23 20:06:21] [INFO] agent_generator: Provider resolved: deepseek/deepseek-chat -> deepseek
+[2026-04-23 20:06:21] [INFO] agent_generator: [LLM·Tools] model=deepseek/deepseek-chat, tools=['search'], messages=3
+[2026-04-23 20:06:23] [INFO] agent_generator: [ToolCall] search args={'query': '越级管理 一线工程师 被老板直接管辖 事实 数据', 'max_results': 5}
+[2026-04-23 20:06:23] [INFO] tools.search: Search start: query='越级管理 一线工程师 被老板直接管辖 事实 数据', max_results=5
+[2026-04-23 20:06:24] [ERROR] tools.search: Search failed: https://www.bing.com/search?q=%E8%B6%8A%E7%BA%A7%E7%AE%A1%E7%90%86+%E4%B8%80%E7%BA%BF%E5%B7%A5%E7%A8%8B%E5%B8%88+%E8%A2%AB%E8%80%81%E6%9D%BF%E7%9B%B4%E6%8E%A5%E7%AE%A1%E8%BE%96+%E4%BA%8B%E5%AE%9E+%E6%95%B0%E6%8D%AE return None. params={'q': '越级管理 一线工程师 被老板直接管辖 事实 数据'} content=None data=None
+[2026-04-23 20:06:24] [INFO] agent_generator: [ToolResult] search result_len=299
+[2026-04-23 20:06:24] [INFO] agent_generator: [ToolCall] search args={'query': '越级管理 组织架构 常见 统计', 'max_results': 5}
+[2026-04-23 20:06:24] [INFO] tools.search: Search start: query='越级管理 组织架构 常见 统计', max_results=5
+[2026-04-23 20:06:24] [ERROR] tools.search: Search failed: https://www.bing.com/search?q=%E8%B6%8A%E7%BA%A7%E7%AE%A1%E7%90%86+%E7%BB%84%E7%BB%87%E6%9E%B6%E6%9E%84+%E5%B8%B8%E8%A7%81+%E7%BB%9F%E8%AE%A1 return None. params={'q': '越级管理 组织架构 常见 统计'} content=None data=None
+[2026-04-23 20:06:24] [INFO] agent_generator: [ToolResult] search result_len=217
+[2026-04-23 20:06:24] [INFO] agent_generator: [LLM·Tools·Phase2] model=deepseek/deepseek-chat, messages=6
+[2026-04-23 20:06:26] [INFO] modes.six_hat: Role end: white, content_len=230
+[2026-04-23 20:06:26] [INFO] session: TurnEnd: white, content_len=230
+[2026-04-23 20:06:26] [INFO] modes.six_hat: Role speak: red, model=deepseek/deepseek-chat, history=3
+[2026-04-23 20:06:26] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=3
+[2026-04-23 20:06:29] [INFO] modes.six_hat: Role end: red, content_len=153
+[2026-04-23 20:06:29] [INFO] session: TurnEnd: red, content_len=153
+[2026-04-23 20:06:29] [INFO] modes.six_hat: Role speak: black, model=deepseek/deepseek-chat, history=4
+[2026-04-23 20:06:29] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=5
+[2026-04-23 20:06:32] [INFO] modes.six_hat: Role end: black, content_len=171
+[2026-04-23 20:06:32] [INFO] session: TurnEnd: black, content_len=171
+[2026-04-23 20:06:32] [INFO] modes.six_hat: Role speak: yellow, model=deepseek/deepseek-chat, history=5
+[2026-04-23 20:06:32] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=5
+[2026-04-23 20:06:34] [INFO] modes.six_hat: Role end: yellow, content_len=159
+[2026-04-23 20:06:34] [INFO] session: TurnEnd: yellow, content_len=159
+[2026-04-23 20:06:34] [INFO] modes.six_hat: Role speak: green, model=deepseek/deepseek-chat, history=6
+[2026-04-23 20:06:34] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=7
+[2026-04-23 20:06:37] [INFO] modes.six_hat: Role end: green, content_len=183
+[2026-04-23 20:06:37] [INFO] session: TurnEnd: green, content_len=183
+[2026-04-23 20:06:37] [INFO] modes.six_hat: Role speak: blue, model=deepseek/deepseek-reasoner, history=7
+[2026-04-23 20:06:37] [INFO] agent_generator: [LLM] model=deepseek/deepseek-reasoner, messages=7
+[2026-04-23 20:06:41] [INFO] modes.six_hat: Role end: blue, content_len=198
+[2026-04-23 20:06:41] [INFO] session: TurnEnd: blue, content_len=198
+[2026-04-23 20:06:41] [INFO] modes.six_hat: SixHat round 2/3
+[2026-04-23 20:06:41] [INFO] modes.six_hat: Tools enabled for white: ['search']
+[2026-04-23 20:06:41] [INFO] modes.six_hat: Role speak: white, model=deepseek/deepseek-chat, history=8
+[2026-04-23 20:06:41] [INFO] agent_generator: [LLM·Tools] model=deepseek/deepseek-chat, tools=['search'], messages=9
+[2026-04-23 20:06:46] [INFO] agent_generator: [LLM·Tools] model=deepseek/deepseek-chat, no tool_calls, direct reply
+[2026-04-23 20:06:46] [INFO] modes.six_hat: Role end: white, content_len=232
+[2026-04-23 20:06:46] [INFO] session: TurnEnd: white, content_len=232
+[2026-04-23 20:06:46] [INFO] modes.six_hat: Role speak: red, model=deepseek/deepseek-chat, history=9
+[2026-04-23 20:06:46] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=9
+[2026-04-23 20:06:48] [INFO] modes.six_hat: Role end: red, content_len=151
+[2026-04-23 20:06:48] [INFO] session: TurnEnd: red, content_len=151
+[2026-04-23 20:06:48] [INFO] modes.six_hat: Role speak: black, model=deepseek/deepseek-chat, history=10
+[2026-04-23 20:06:48] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=11
+[2026-04-23 20:06:53] [INFO] modes.six_hat: Role end: black, content_len=403
+[2026-04-23 20:06:53] [INFO] session: TurnEnd: black, content_len=403
+[2026-04-23 20:06:53] [INFO] modes.six_hat: Role speak: yellow, model=deepseek/deepseek-chat, history=11
+[2026-04-23 20:06:53] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=11
+[2026-04-23 20:06:54] [INFO] modes.six_hat: Role end: yellow, content_len=144
+[2026-04-23 20:06:54] [INFO] session: TurnEnd: yellow, content_len=144
+[2026-04-23 20:06:54] [INFO] modes.six_hat: Role speak: green, model=deepseek/deepseek-chat, history=12
+[2026-04-23 20:06:54] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=13
+[2026-04-23 20:06:56] [INFO] modes.six_hat: Role end: green, content_len=203
+[2026-04-23 20:06:56] [INFO] session: TurnEnd: green, content_len=203
+[2026-04-23 20:06:57] [INFO] modes.six_hat: Role speak: blue, model=deepseek/deepseek-reasoner, history=13
+[2026-04-23 20:06:57] [INFO] agent_generator: [LLM] model=deepseek/deepseek-reasoner, messages=13
+[2026-04-23 20:07:01] [INFO] modes.six_hat: Role end: blue, content_len=158
+[2026-04-23 20:07:01] [INFO] session: TurnEnd: blue, content_len=158
+[2026-04-23 20:07:01] [INFO] modes.six_hat: SixHat round 3/3
+[2026-04-23 20:07:01] [INFO] modes.six_hat: Tools enabled for white: ['search']
+[2026-04-23 20:07:01] [INFO] modes.six_hat: Role speak: white, model=deepseek/deepseek-chat, history=14
+[2026-04-23 20:07:01] [INFO] agent_generator: [LLM·Tools] model=deepseek/deepseek-chat, tools=['search'], messages=15
+[2026-04-23 20:07:02] [INFO] agent_generator: [LLM·Tools] model=deepseek/deepseek-chat, no tool_calls, direct reply
+[2026-04-23 20:07:02] [INFO] modes.six_hat: Role end: white, content_len=125
+[2026-04-23 20:07:02] [INFO] session: TurnEnd: white, content_len=125
+[2026-04-23 20:07:02] [INFO] modes.six_hat: Role speak: red, model=deepseek/deepseek-chat, history=15
+[2026-04-23 20:07:02] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=15
+[2026-04-23 20:07:05] [INFO] modes.six_hat: Role end: red, content_len=169
+[2026-04-23 20:07:05] [INFO] session: TurnEnd: red, content_len=169
+[2026-04-23 20:07:05] [INFO] modes.six_hat: Role speak: black, model=deepseek/deepseek-chat, history=16
+[2026-04-23 20:07:05] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=17
+[2026-04-23 20:07:07] [INFO] modes.six_hat: Role end: black, content_len=181
+[2026-04-23 20:07:07] [INFO] session: TurnEnd: black, content_len=181
+[2026-04-23 20:07:07] [INFO] modes.six_hat: Role speak: yellow, model=deepseek/deepseek-chat, history=17
+[2026-04-23 20:07:07] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=17
+[2026-04-23 20:07:09] [INFO] modes.six_hat: Role end: yellow, content_len=124
+[2026-04-23 20:07:09] [INFO] session: TurnEnd: yellow, content_len=124
+[2026-04-23 20:07:09] [INFO] modes.six_hat: Role speak: green, model=deepseek/deepseek-chat, history=18
+[2026-04-23 20:07:09] [INFO] agent_generator: [LLM] model=deepseek/deepseek-chat, messages=19
+[2026-04-23 20:07:12] [INFO] modes.six_hat: Role end: green, content_len=246
+[2026-04-23 20:07:12] [INFO] session: TurnEnd: green, content_len=246
+[2026-04-23 20:07:12] [INFO] modes.six_hat: Role speak: blue, model=deepseek/deepseek-reasoner, history=19
+[2026-04-23 20:07:12] [INFO] agent_generator: [LLM] model=deepseek/deepseek-reasoner, messages=19
+[2026-04-23 20:07:16] [INFO] modes.six_hat: Role end: blue, content_len=148
+[2026-04-23 20:07:16] [INFO] session: TurnEnd: blue, content_len=148
+[2026-04-23 20:07:16] [INFO] modes.six_hat: SixHat complete
+[2026-04-23 20:07:16] [INFO] session: Session run complete: 809f5b6e94b64eae94a7bb6eeacee8ea, history_len=19
+[2026-04-23 20:07:16] [INFO] api.sessions: Discussion complete: 809f5b6e94b64eae94a7bb6eeacee8ea
+[2026-04-23 20:15:33] [INFO] api.sessions: WebSocket disconnect: 809f5b6e94b64eae94a7bb6eeacee8ea
+[2026-04-23 20:17:28] [INFO] api.main: API shutdown
+[2026-04-23 20:17:37] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:17:37] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:17:37] [INFO] api.main: API shutdown
+[2026-04-23 20:17:51] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:17:51] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:17:57] [INFO] api.main: API shutdown
+[2026-04-23 20:18:05] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:18:05] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:18:05] [INFO] api.main: API shutdown
+[2026-04-23 20:18:13] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:18:13] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:18:25] [INFO] api.main: API shutdown
+[2026-04-23 20:18:38] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:18:38] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:18:44] [INFO] api.main: API shutdown
+[2026-04-23 20:18:52] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:18:52] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:20:19] [INFO] api.sessions: Create session: 44458b75ccee4df994cd0b5786078a5a, mode=six_hat, topic=review test
+[2026-04-23 20:20:19] [INFO] api.sessions: Session record created: 44458b75ccee4df994cd0b5786078a5a, rounds=3
+[2026-04-23 20:20:19] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:20:19] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:20:19] [INFO] api.main: API shutdown
+[2026-04-23 20:37:15] [INFO] api.main: API shutdown
+[2026-04-23 20:37:28] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:37:28] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:37:33] [INFO] api.main: API shutdown
+[2026-04-23 20:37:40] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:37:40] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:39:49] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:39:49] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:39:49] [INFO] api.main: API shutdown
+[2026-04-23 20:40:17] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:40:17] [INFO] api.main: API startup: seed complete
+[2026-04-23 20:40:17] [INFO] api.main: API shutdown
+[2026-04-23 20:40:38] [INFO] api.main: API startup: initializing database
+[2026-04-23 20:40:39] [INFO] api.main: API startup: seed complete

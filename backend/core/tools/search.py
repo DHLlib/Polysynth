@@ -2,6 +2,7 @@
 # -*- coding:utf-8 -*-
 """DuckDuckGo 免费搜索工具。"""
 
+import asyncio
 import warnings
 
 from backend.core.logger import get_logger
@@ -13,12 +14,17 @@ warnings.filterwarnings("ignore", message=".*renamed to `ddgs`.*")
 from duckduckgo_search import DDGS
 
 
+def _search_sync(query: str, max_results: int) -> list[dict]:
+    """同步搜索（在线程池中执行，避免阻塞事件循环）。"""
+    with DDGS() as ddgs:
+        return list(ddgs.text(query, max_results=max_results))
+
+
 async def search_web(query: str, max_results: int = 5) -> str:
     """使用 DuckDuckGo 搜索网页。"""
     logger.info(f"Search start: query='{query}', max_results={max_results}")
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
+        results = await asyncio.to_thread(_search_sync, query, max_results)
         if not results:
             logger.info("Search end: no results")
             return "未找到相关搜索结果。"

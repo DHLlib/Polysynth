@@ -77,7 +77,11 @@ class SixHatRunner:
         tools = None
         tools_enabled_str = participant.get("tools_enabled")
         if tools_enabled_str:
-            enabled_names = json.loads(tools_enabled_str)
+            try:
+                enabled_names = json.loads(tools_enabled_str)
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid tools_enabled JSON for {role_key}: {tools_enabled_str}")
+                enabled_names = []
             if enabled_names:
                 tools = get_tool_schemas(enabled_names)
                 logger.info(f"Tools enabled for {role_key}: {enabled_names}")
