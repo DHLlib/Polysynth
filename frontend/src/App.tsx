@@ -45,7 +45,7 @@ export default function App() {
     return last.type !== "session_end" && last.type !== "error";
   }, [events]);
 
-  const handleStart = async (topic: string) => {
+  const handleStart = async (topic: string, files: File[] = []) => {
     if (isRunning) return;
     disconnect();
     clearEvents();
@@ -56,6 +56,7 @@ export default function App() {
       mode: selectedMode as "six_hat" | "debate",
       topic,
       rounds,
+      files,
     });
 
     setCurrentSessionId(session.id);

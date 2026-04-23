@@ -7,7 +7,7 @@ interface Props {
   modes: ModeConfig[];
   selectedMode: string;
   onModeChange: (mode: string) => void;
-  onTopicSubmit: (topic: string) => void;
+  onTopicSubmit: (topic: string, files: File[]) => void;
   onToggleSidebar: () => void;
   onOpenConfig: () => void;
   isRunning: boolean;
