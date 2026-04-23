@@ -9,8 +9,7 @@ interface Props {
 
 export default function ChatView({ events, historyMessages }: Props) {
   const messages = useMemo(() => {
-    if (historyMessages) return historyMessages;
-    const msgs: StreamingMessage[] = [];
+    const msgs: StreamingMessage[] = historyMessages ? [...historyMessages] : [];
     let current: StreamingMessage | null = null;
 
     for (const ev of events) {

@@ -84,23 +84,23 @@ export default function App() {
       setSelectedMode(session.mode);
       setDisplayTopic(session.topic);
 
+      const modeCfg = modes.find((m) => m.name === session.mode);
+      const colorMap = new Map(
+        modeCfg?.participants.map((p) => [p.role_key, p.color || ""]) ?? []
+      );
+
+      const msgs: StreamingMessage[] = (session.messages as Message[]).map((msg) => ({
+        role_key: msg.role_key,
+        role_name: msg.name,
+        color: colorMap.get(msg.role_key) || "",
+        tokens: [],
+        full_content: msg.content,
+        is_complete: true,
+      }));
+      setHistoryMessages(msgs);
+
       if (session.status === "running") {
         connect(id);
-      } else {
-        const modeCfg = modes.find((m) => m.name === session.mode);
-        const colorMap = new Map(
-          modeCfg?.participants.map((p) => [p.role_key, p.color || ""]) ?? []
-        );
-
-        const msgs: StreamingMessage[] = (session.messages as Message[]).map((msg) => ({
-          role_key: msg.role_key,
-          role_name: msg.name,
-          color: colorMap.get(msg.role_key) || "",
-          tokens: [],
-          full_content: msg.content,
-          is_complete: true,
-        }));
-        setHistoryMessages(msgs);
       }
     } catch {
       // ignore fetch error
