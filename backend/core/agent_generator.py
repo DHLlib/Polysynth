@@ -33,6 +33,7 @@ async def _summarize_search_query(
     api_base: str | None = None,
 ) -> str:
     """根据话题和讨论历史，用 AI 优化搜索关键词。"""
+    logger.info(f"[SearchQuery·Start] topic='{topic}', original='{original_query}', history={len(history)}")
     recent = history[-5:] if history else []
     history_text = "\n".join(
         f"{m['role']}: {str(m.get('content', ''))[:200]}"
@@ -71,7 +72,8 @@ async def _summarize_search_query(
 
     try:
         resp = await acompletion(**llm_kwargs)
-        query = resp.choices[0].message.content.strip().strip('"\'').strip()
+        content = resp.choices[0].message.content or ""
+        query = content.strip().strip('"\'').strip()
         logger.info(f"[SearchQuery] original='{original_query}' -> optimized='{query}'")
         return query if query else original_query
     except Exception as e:
