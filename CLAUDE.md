@@ -225,5 +225,10 @@ CLI 兼容：如果数据库中未找到 provider，回退到 `Config` 单例的
 - **颜色编码兼容性**：前端使用 Hex 颜色（`#RRGGBB`），CLI 使用 ANSI 转义码（`[3Xm`）。`frontend/src/lib/colors.ts` 提供 `ansiToHex()` 和 `hexToAnsi()` 双向转换，使用 16 色映射表 + 欧氏距离最近匹配作为 fallback。
 - **辩论赛角色清理**：`seed_db_from_files()` 在 upsert 新参与者后会**删除当前模式中不在配置文件里的旧角色**。删除 `polysynth.db` 重启后端即可自动清理（如移除旧版遗留的"正方"/"反方"角色）。
 - **轮次配置的元数据驱动**：`mode_json.rounds.configurable` 控制轮次是否可在前端调整。`six_hat` 设为 `true`（1~10 轮可调），`debate` 设为 `false`（固定 4 轮）。前端 Header 和 Session 创建接口均遵守此标志。
+- **系统级工具提示词注入**：工具使用规范作为独立 system message 插入 messages 列表最前面（`six_hat.py`、`debate.py` 的 `_build_tool_system_msg()`），优先级高于角色定义，避免角色 prompt 中的指令（如白帽子"缺乏数据就说缺乏"）与工具使用冲突。
+- **工具调用上下文写入 history**：`agent_generator.py` Phase 2 完成后，将 tool results 摘要追加到 `session.add_history()`，确保后续轮次能看到之前的搜索记录，避免重复搜索或幻觉。
+- **搜索关键词 AI 优化**：调用 search 工具前，`_summarize_search_query()` 使用当前角色的模型，根据 topic + discussion history 生成优化后的搜索关键词，提升搜索精准度。
 - **`tools_enabled` 脏数据防护**：`six_hat.py` 和 `debate.py` 在解析 `tools_enabled` JSON 时加了 `try/except`，避免脏数据导致讨论崩溃。
 - **日志级别环境变量**：设置 `LOG_LEVEL=DEBUG` 可开启 DEBUG 级别日志（默认 INFO），无需修改代码。
+- **搜索工具安全限制**：`search_web` 限制 `max_results` 范围为 1~20，并设置 15 秒超时，防止恶意/异常请求阻塞事件循环。
+- **Host 角色工具保留**：`RuntimeConfig.from_db()` 注入全局主持人配置时保留 `tools_enabled` 字段，避免 Web 模式下主持人工具被静默禁用。
