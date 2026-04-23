@@ -11,6 +11,7 @@ interface Props {
   onToggleSidebar: () => void;
   onOpenConfig: () => void;
   isRunning: boolean;
+  isSubmitting?: boolean;
   topicValue?: string;
   topicKey?: number;
   rounds: number;
@@ -25,6 +26,7 @@ export default function Header({
   onToggleSidebar,
   onOpenConfig,
   isRunning,
+  isSubmitting,
   topicValue,
   topicKey,
   rounds,
@@ -84,7 +86,7 @@ export default function Header({
           </div>
         )}
 
-        <TopicInput key={topicKey} onSubmit={onTopicSubmit} disabled={isRunning} value={topicValue} />
+        <TopicInput key={topicKey} onSubmit={onTopicSubmit} disabled={isRunning || !!isSubmitting} value={topicValue} />
       </div>
 
       <button

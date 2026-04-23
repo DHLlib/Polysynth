@@ -18,6 +18,7 @@ export default function App() {
   const [historyMessages, setHistoryMessages] = useState<StreamingMessage[] | null>(null);
   const [displayTopic, setDisplayTopic] = useState("");
   const [topicKey, setTopicKey] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { data: sessions, refetch: refetchSessions } = useSessionList();
   const createSession = useCreateSession();
   const { connect, disconnect, events, clearEvents, connected } = useWebSocket();
@@ -46,22 +47,27 @@ export default function App() {
   }, [events]);
 
   const handleStart = async (topic: string, files: File[] = []) => {
-    if (isRunning) return;
+    if (isRunning || isSubmitting) return;
+    setIsSubmitting(true);
     disconnect();
     clearEvents();
     setHistoryMessages(null);
     setDisplayTopic("");
 
-    const session = await createSession.mutateAsync({
-      mode: selectedMode as "six_hat" | "debate",
-      topic,
-      rounds,
-      files,
-    });
+    try {
+      const session = await createSession.mutateAsync({
+        mode: selectedMode as "six_hat" | "debate",
+        topic,
+        rounds,
+        files,
+      });
 
-    setCurrentSessionId(session.id);
-    setTopicKey((k) => k + 1);
-    connect(session.id);
+      setCurrentSessionId(session.id);
+      setTopicKey((k) => k + 1);
+      connect(session.id);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleNewChat = () => {
@@ -133,6 +139,7 @@ export default function App() {
           onToggleSidebar={toggleSidebar}
           onOpenConfig={() => setConfigPanelOpen(true)}
           isRunning={isRunning}
+          isSubmitting={isSubmitting}
           topicValue={historyMessages ? displayTopic : undefined}
           topicKey={topicKey}
           rounds={rounds}
