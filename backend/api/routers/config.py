@@ -5,6 +5,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.core.logger import get_logger
+
 from backend.api.deps import get_db
 from backend.api.schemas import (
     ModeConfigOut,
@@ -32,6 +34,7 @@ from backend.datebase.crud import (
 )
 from backend.core.agent_generator import clear_provider_cache
 
+logger = get_logger("api.config")
 router = APIRouter()
 
 
@@ -48,6 +51,7 @@ async def patch_mode_config(
     cfg = await update_mode_config(db, mode_name, **kwargs)
     if cfg is None:
         raise HTTPException(status_code=404, detail="Mode not found")
+    logger.info(f"Mode config updated: {mode_name}, fields={list(kwargs.keys())}")
     return cfg
 
 
@@ -58,6 +62,7 @@ async def patch_participant(
     p = await update_participant(db, participant_id, **body)
     if p is None:
         raise HTTPException(status_code=404, detail="Participant not found")
+    logger.info(f"Participant updated: id={participant_id}, fields={list(body.keys())}")
     return p
 
 
@@ -71,6 +76,7 @@ async def list_providers(db: AsyncSession = Depends(get_db)):
 @router.post("/providers", response_model=ProviderOut, status_code=201)
 async def add_provider(body: ProviderCreate, db: AsyncSession = Depends(get_db)):
     clear_provider_cache()
+    logger.info(f"Provider created: {body.name}")
     return await create_provider(db, body.name, body.api_key, body.base_url)
 
 
@@ -83,6 +89,7 @@ async def patch_provider(
     if p is None:
         raise HTTPException(status_code=404, detail="Provider not found")
     clear_provider_cache()
+    logger.info(f"Provider updated: id={provider_id}, fields={list(kwargs.keys())}")
     return p
 
 
@@ -92,6 +99,7 @@ async def remove_provider(provider_id: int, db: AsyncSession = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=404, detail="Provider not found")
     clear_provider_cache()
+    logger.info(f"Provider deleted: id={provider_id}")
     return None
 
 
@@ -104,6 +112,7 @@ async def add_provider_model(
         raise HTTPException(status_code=404, detail="Provider not found")
     await create_provider_model(db, provider_id, body.model_name)
     clear_provider_cache()
+    logger.info(f"Provider model added: provider_id={provider_id}, model={body.model_name}")
     # refresh with models
     from sqlalchemy.orm import selectinload
     from sqlalchemy import select
@@ -122,6 +131,7 @@ async def remove_provider_model(
     if not ok:
         raise HTTPException(status_code=404, detail="Model not found")
     clear_provider_cache()
+    logger.info(f"Provider model removed: provider_id={provider_id}, model_id={model_id}")
     return None
 
 
@@ -136,6 +146,7 @@ async def read_global_host(db: AsyncSession = Depends(get_db)):
 async def set_global_host(body: GlobalHostUpdate, db: AsyncSession = Depends(get_db)):
     kwargs = body.model_dump(exclude_unset=True)
     host = await update_global_host(db, **kwargs)
+    logger.info(f"Global host updated: fields={list(kwargs.keys())}")
     # 同步更新所有模式中的 host 参与者
     from backend.datebase.crud import get_mode_config
     from backend.datebase.models import Participant

@@ -53,6 +53,7 @@ class RuntimeConfig:
                 "model": p.model,
                 "name": p.name,
                 "color": p.color or "",
+                "tools_enabled": p.tools_enabled,
             }
             prompts[p.role_key] = p.system_prompt
 

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_db
 from backend.api.schemas import SessionCreate, SessionOut, SessionDetailOut, ModeConfigUpdate
+from backend.core.logger import get_logger
 from backend.core.output_handlers import WebSocketOutputHandler
 from backend.core.runtime_config import RuntimeConfig
 from backend.core.session import Session as DiscussionSession
@@ -23,6 +24,8 @@ from backend.datebase.crud import (
 )
 from backend.datebase.engine import AsyncSessionLocal
 
+logger = get_logger("api.sessions")
+
 router = APIRouter()
 
 
@@ -31,6 +34,7 @@ async def create_new_session(
     body: SessionCreate, db: AsyncSession = Depends(get_db)
 ):
     session_id = uuid.uuid4().hex
+    logger.info(f"Create session: {session_id}, mode={body.mode}, topic={body.topic}")
     mode_cfg = await get_mode_config(db, body.mode)
     default_rounds = mode_cfg.default_rounds if mode_cfg else 3
 
@@ -44,6 +48,7 @@ async def create_new_session(
             rounds = max(min_r, min(max_r, body.rounds))
 
     rec = await create_session_record(db, session_id, body.mode, body.topic, rounds)
+    logger.info(f"Session record created: {session_id}, rounds={rounds}")
     return rec
 
 
@@ -64,6 +69,7 @@ async def get_session_detail(session_id: str, db: AsyncSession = Depends(get_db)
 
 @router.websocket("/ws/{session_id}")
 async def session_websocket(websocket: WebSocket, session_id: str):
+    logger.info(f"WebSocket connect: {session_id}")
     await websocket.accept()
 
     # 加载 session
@@ -77,6 +83,7 @@ async def session_websocket(websocket: WebSocket, session_id: str):
             return
 
         if db_session.status == "running":
+            logger.warning(f"WebSocket rejected: {session_id} already running")
             await websocket.send_json(
                 {"type": "error", "payload": {"message": "Session already running"}}
             )
@@ -121,7 +128,7 @@ async def session_websocket(websocket: WebSocket, session_id: str):
             if data == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        pass
+        logger.info(f"WebSocket disconnect: {session_id}")
     finally:
         if not task.done():
             task.cancel()
@@ -135,11 +142,13 @@ async def _run_discussion(disc_session: DiscussionSession, session_id: str):
     try:
         async for _event in disc_session.run():
             pass
-    except Exception:
+    except Exception as e:
+        logger.exception(f"Discussion error: {session_id}, error={e}")
         async with AsyncSessionLocal() as db:
             await update_session_status(db, session_id, "error")
             await db.commit()
     else:
+        logger.info(f"Discussion complete: {session_id}")
         async with AsyncSessionLocal() as db:
             await update_session_status(db, session_id, "completed")
             await db.commit()

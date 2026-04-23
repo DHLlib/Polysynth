@@ -3,7 +3,7 @@
 """数据库 CRUD 操作与初始化 seed。"""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -162,7 +162,7 @@ async def update_mode_config(
     for k, v in kwargs.items():
         if hasattr(cfg, k):
             setattr(cfg, k, v)
-    cfg.updated_at = datetime.utcnow()
+    cfg.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(cfg)
     return cfg
@@ -191,7 +191,7 @@ async def upsert_mode_config(
         cfg.description = description
         cfg.mode_json = mode_json
         cfg.default_rounds = default_rounds
-        cfg.updated_at = datetime.utcnow()
+        cfg.updated_at = datetime.now(timezone.utc)
     await db.flush()
     await db.refresh(cfg)
     return cfg
@@ -215,6 +215,7 @@ async def upsert_participant(
     color: str | None = None,
     system_prompt: str = "",
     sort_order: int = 0,
+    tools_enabled: str | None = None,
 ) -> Participant:
     result = await db.execute(
         select(Participant).where(
@@ -232,6 +233,7 @@ async def upsert_participant(
             color=color,
             system_prompt=system_prompt,
             sort_order=sort_order,
+            tools_enabled=tools_enabled,
         )
         db.add(p)
     else:
@@ -240,6 +242,8 @@ async def upsert_participant(
         p.color = color
         p.system_prompt = system_prompt
         p.sort_order = sort_order
+        if tools_enabled is not None:
+            p.tools_enabled = tools_enabled
     await db.flush()
     await db.refresh(p)
     return p
@@ -256,6 +260,8 @@ async def update_participant(
         return None
     for k, v in kwargs.items():
         if hasattr(p, k):
+            if k == "tools_enabled" and v == "":
+                v = None
             setattr(p, k, v)
     await db.commit()
     await db.refresh(p)
@@ -315,7 +321,7 @@ async def update_session_status(
         return
     rec.status = status
     if status in ("completed", "error"):
-        rec.completed_at = datetime.utcnow()
+        rec.completed_at = datetime.now(timezone.utc)
     await db.commit()
 
 
@@ -335,7 +341,7 @@ async def append_message(
         name=name,
         content=content,
         model=model,
-        ts=datetime.utcnow(),
+        ts=datetime.now(timezone.utc),
     )
     db.add(msg)
     await db.commit()

@@ -16,6 +16,7 @@ class ParticipantOut(BaseModel):
     color: Optional[str]
     system_prompt: str
     sort_order: int
+    tools_enabled: Optional[str]
 
     class Config:
         from_attributes = True

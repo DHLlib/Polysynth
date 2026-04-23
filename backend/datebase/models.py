@@ -2,11 +2,15 @@
 # -*- coding:utf-8 -*-
 """SQLAlchemy 2.0 异步 ORM 模型定义。"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import ForeignKey, JSON, Text, String, Integer, DateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -23,9 +27,9 @@ class ModeConfig(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, default=None)
     mode_json: Mapped[dict] = mapped_column(JSON, default=dict)
     default_rounds: Mapped[int] = mapped_column(Integer, default=3)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )
 
     participants: Mapped[List["Participant"]] = relationship(
@@ -49,6 +53,7 @@ class Participant(Base):
     color: Mapped[Optional[str]] = mapped_column(String(20), default=None)
     system_prompt: Mapped[str] = mapped_column(Text, default="")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    tools_enabled: Mapped[Optional[str]] = mapped_column(Text, default=None)  # JSON 数组，如 '["search"]'
 
     mode: Mapped["ModeConfig"] = relationship(back_populates="participants")
 
@@ -69,7 +74,7 @@ class SessionRecord(Base):
     status: Mapped[str] = mapped_column(
         String(20), default="pending"
     )  # pending / running / completed / error
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=None)
 
     messages: Mapped[List["Message"]] = relationship(
@@ -93,7 +98,7 @@ class Message(Base):
     name: Mapped[str] = mapped_column(String(100))
     content: Mapped[str] = mapped_column(Text)
     model: Mapped[Optional[str]] = mapped_column(String(100), default=None)
-    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     session: Mapped["SessionRecord"] = relationship(back_populates="messages")
 
@@ -118,7 +123,7 @@ class Provider(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     base_url: Mapped[Optional[str]] = mapped_column(String(255), default=None)
     api_key: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     models: Mapped[List["ProviderModel"]] = relationship(
         back_populates="provider",

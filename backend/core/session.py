@@ -16,6 +16,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from backend.core.logger import get_logger
+
+logger = get_logger("session")
+
 SESSION_DIR = Path(__file__).parent.parent.parent / "sessions"
 SESSION_DIR.mkdir(exist_ok=True)
 
@@ -31,18 +35,22 @@ async def session_create(
     :param handlers: 自定义输出处理器列表；为空则自动注册 TerminalOutputHandler
     :return: 运行结束后的 Session 对象（可读取历史、状态等）
     """
+    logger.info(f"Session create: {session_id}")
     session = Session(session_id)
 
     if handlers:
         for handler in handlers:
             session.register_output_handler(handler)
+        logger.info(f"Registered {len(handlers)} custom handlers")
     else:
         from backend.core.output_handlers import TerminalOutputHandler
         session.register_output_handler(TerminalOutputHandler())
+        logger.info("Registered TerminalOutputHandler")
 
     async for _event in session.run():
         pass  # 输出处理器负责所有终端输出
 
+    logger.info(f"Session end: {session_id}")
     return session
 
 
@@ -62,6 +70,7 @@ class Session:
         self._jsonl_path = SESSION_DIR / f"{session_id}.jsonl"
         self._state_path = SESSION_DIR / f"{session_id}.state.json"
         self._load_state()
+        logger.info(f"Session init: {session_id}, history_len={len(self._history)}")
 
     # ── 状态读写（持久化到 .state.json） ──
     def _load_state(self):
@@ -148,25 +157,33 @@ class Session:
 
         cfg = self.get_config()
         runner = get_runner(cfg.default_mode)
+        logger.info(f"Session run start: {self.session_id}, mode={cfg.default_mode}, topic={cfg.topic}, rounds={cfg.rounds}")
 
-        async for event in runner.run(self):
-            # 转发给所有注册的处理程序
-            for handler in self._handlers:
-                await handler(event)
+        try:
+            async for event in runner.run(self):
+                # 转发给所有注册的处理程序
+                for handler in self._handlers:
+                    await handler(event)
 
-            # 发言结束时：更新内存历史 + 持久化到 jsonl + 可选 DB 回调
-            if isinstance(event, TurnEndEvent):
-                role = "assistant" if len(self._history) % 2 == 0 else "user"
-                self.add_history(role, event.full_content)
-                entry = {
-                    "role_key": event.role_key,
-                    "role"    : role,
-                    "name"    : cfg.participants[event.role_key]["name"],
-                    "content" : event.full_content,
-                    "model"   : cfg.participants[event.role_key]["model"],
-                }
-                self.append_message(entry)
-                if self._db_callback is not None:
-                    await self._db_callback(entry)
+                # 发言结束时：更新内存历史 + 持久化到 jsonl + 可选 DB 回调
+                if isinstance(event, TurnEndEvent):
+                    role = "assistant" if len(self._history) % 2 == 0 else "user"
+                    self.add_history(role, event.full_content)
+                    entry = {
+                        "role_key": event.role_key,
+                        "role"    : role,
+                        "name"    : cfg.participants[event.role_key]["name"],
+                        "content" : event.full_content,
+                        "model"   : cfg.participants[event.role_key]["model"],
+                    }
+                    self.append_message(entry)
+                    logger.info(f"TurnEnd: {event.role_key}, content_len={len(event.full_content)}")
+                    if self._db_callback is not None:
+                        await self._db_callback(entry)
 
-            yield event
+                yield event
+        except Exception as e:
+            logger.exception(f"Session run error: {self.session_id}, error={e}")
+            raise
+        finally:
+            logger.info(f"Session run complete: {self.session_id}, history_len={len(self._history)}")

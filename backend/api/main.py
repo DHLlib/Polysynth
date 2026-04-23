@@ -8,16 +8,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routers import config, modes, sessions
+from backend.core.logger import get_logger
 from backend.datebase.crud import seed_db_from_files
 from backend.datebase.engine import AsyncSessionLocal, init_db
 
+logger = get_logger("api.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("API startup: initializing database")
     await init_db()
     async with AsyncSessionLocal() as db:
         await seed_db_from_files(db)
+    logger.info("API startup: seed complete")
     yield
+    logger.info("API shutdown")
 
 
 app = FastAPI(title="Polysynth API", lifespan=lifespan)

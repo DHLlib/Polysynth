@@ -4,9 +4,15 @@
 LLM 调用层。只负责异步流式调用，不处理打印、历史或 session 记录。
 """
 
-from litellm import completion
+import json
+
+from litellm import acompletion
 
 from backend.core.config import Config
+from backend.core.logger import get_logger
+from backend.core.tools import get_tool_schemas, execute_tool
+
+logger = get_logger("agent_generator")
 
 # 单次 Session 内缓存 provider 配置，避免重复查库
 _provider_cache: dict[str, dict] = {}
@@ -15,11 +21,13 @@ _provider_cache: dict[str, dict] = {}
 def clear_provider_cache() -> None:
     """清除 provider 缓存，在配置更新后调用。"""
     _provider_cache.clear()
+    logger.info("Provider cache cleared")
 
 
 async def _resolve_provider(model: str) -> dict:
     """通过 model 名称从数据库查询对应的 provider 配置。"""
     if model in _provider_cache:
+        logger.debug(f"Provider cache hit: {model}")
         return _provider_cache[model]
 
     try:
@@ -34,21 +42,24 @@ async def _resolve_provider(model: str) -> dict:
                     "base_url": provider.base_url,
                 }
                 _provider_cache[model] = result
+                logger.info(f"Provider resolved: {model} -> {provider.name}")
                 return result
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to resolve provider for {model}: {e}")
 
+    logger.warning(f"No provider found for {model}, fallback to Config")
     return {}
 
 
-async def call_llm(session, model: str, messages: list, cfg=None):
+async def call_llm(session, model: str, messages: list, cfg=None, tools: list[dict] | None = None):
     """
     底层异步流式调用 LLM。
 
-    :param session: Session 对象（保留用于未来扩展：按 session 限流、追踪等）
+    :param session: Session 对象
     :param model: LiteLLM 模型名
     :param messages: 完整消息列表
-    :param cfg: RuntimeConfig 或 Config 实例；为空则 fallback 到 Config 单例
+    :param cfg: RuntimeConfig 或 Config 实例
+    :param tools: OpenAI function schema 列表，传入时启用工具调用
     :yield: 每个流式 token
     """
     if cfg is None:
@@ -56,8 +67,6 @@ async def call_llm(session, model: str, messages: list, cfg=None):
 
     kwargs = {
         "model": model,
-        "messages": messages,
-        "stream": True,
         "temperature": 0.8,
         "timeout": 180,
     }
@@ -69,7 +78,7 @@ async def call_llm(session, model: str, messages: list, cfg=None):
     if provider_cfg.get("base_url"):
         kwargs["api_base"] = provider_cfg["base_url"]
 
-    # 兼容旧逻辑：如果数据库未找到，回退到 Config 的硬编码密钥
+    # 兼容旧逻辑
     if "api_key" not in kwargs:
         if "moonshot" in model:
             kwargs["api_key"] = cfg.kimi_api_key
@@ -77,7 +86,7 @@ async def call_llm(session, model: str, messages: list, cfg=None):
         elif "deepseek" in model:
             kwargs["api_key"] = cfg.deepseek_api_key
 
-    # 修复 messages 格式：DeepSeek 等 API 要求严格交替，且最后一条不能是 assistant
+    # 修复 messages 格式
     fixed_messages = []
     for msg in messages:
         if msg.get("role") == "assistant" and fixed_messages and fixed_messages[-1].get("role") == "assistant":
@@ -88,17 +97,80 @@ async def call_llm(session, model: str, messages: list, cfg=None):
 
     kwargs["messages"] = fixed_messages
 
+    # ── Tool 调用：双阶段 ──
+    if tools:
+        try:
+            tool_names = [t["function"]["name"] for t in tools]
+            logger.info(f"[LLM·Tools] model={model}, tools={tool_names}, messages={len(fixed_messages)}")
+
+            # 阶段一：非流式，检测 tool_calls
+            phase1_kwargs = {**kwargs, "tools": tools, "stream": False}
+            response = await acompletion(**phase1_kwargs)
+            msg = response.choices[0].message
+
+            if getattr(msg, "tool_calls", None):
+                # 执行工具
+                tool_results = []
+                for tc in msg.tool_calls:
+                    fn = tc.function
+                    args = json.loads(fn.arguments) if fn.arguments else {}
+                    logger.info(f"[ToolCall] {fn.name} args={args}")
+                    result = await execute_tool(fn.name, args)
+                    logger.info(f"[ToolResult] {fn.name} result_len={len(result)}")
+                    logger.debug(f"[ToolResult·Detail] {result[:500]}...")
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": fn.name,
+                        "content": result,
+                    })
+
+                # 把 assistant 的 tool_calls 和 tool results 追加到 messages
+                assistant_msg = {
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": tc.type,
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
+                        for tc in msg.tool_calls
+                    ],
+                }
+                phase2_messages = fixed_messages + [assistant_msg] + tool_results
+
+                # 阶段二：流式输出最终答案
+                logger.info(f"[LLM·Tools·Phase2] model={model}, messages={len(phase2_messages)}")
+                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True}
+                response2 = await acompletion(**phase2_kwargs)
+                async for chunk in response2:
+                    delta = chunk.choices[0].delta.content or ""
+                    yield delta
+                return
+
+            # LLM 直接回答了，没有调用工具
+            logger.info(f"[LLM·Tools] model={model}, no tool_calls, direct reply")
+            if msg.content:
+                yield msg.content
+            return
+
+        except Exception as e:
+            logger.exception(f"[LLM·Tools·Error] model={model}, error={e}")
+            yield f"[调用失败：{e}]"
+            return
+
+    # ── 普通流式调用（无 tools）──
     try:
-        print(f"[LLM 调用] model={model}, messages_len={len(fixed_messages)}")
+        kwargs["stream"] = True
+        logger.info(f"[LLM] model={model}, messages={len(fixed_messages)}")
         for i, m in enumerate(fixed_messages):
-            print(f"  msg[{i}] role={m['role']} content={m['content'][:50]}...")
-        response = completion(**kwargs)
-        for chunk in response:
+            content_preview = str(m.get("content", ""))[:80].replace("\n", " ")
+            logger.debug(f"  msg[{i}] role={m['role']} content={content_preview}...")
+        response = await acompletion(**kwargs)
+        async for chunk in response:
             delta = chunk.choices[0].delta.content or ""
             yield delta
     except Exception as e:
-        import traceback
-        error_detail = traceback.format_exc()
-        print(f"[LLM 调用错误] model={model}, error={e}")
-        print(error_detail)
+        logger.exception(f"[LLM·Error] model={model}, error={e}")
         yield f"[调用失败：{e}]"
