@@ -48,7 +48,8 @@ python backend/main.py
 
 后端新增依赖：
 ```bash
-pip install fastapi uvicorn sqlalchemy aiosqlite websockets
+pip install fastapi uvicorn sqlalchemy aiosqlite websockets python-multipart
+pip install PyMuPDF python-docx openpyxl python-pptx  # 文件解析
 ```
 
 前端依赖（已包含在 package.json）：
@@ -93,6 +94,8 @@ Polysynth_v2/
 │   │   ├── runtime_config.py   # RuntimeConfig 运行时配置（Web 模式）
 │   │   ├── output_handlers.py  # TerminalOutputHandler + WebSocketOutputHandler
 │   │   ├── logger.py           # 统一日志配置（console + 文件轮转）
+│   │   ├── file_parser.py      # 文件内容提取（txt/md/pdf/docx/xlsx/pptx）
+│   │   ├── summarizer.py       # AI 文件摘要生成器
 │   │   ├── tools/              # Agent 工具层
 │   │   │   ├── __init__.py     # 导出 get_tool_schemas, execute_tool
 │   │   │   ├── schema.py       # ToolSchema dataclass
@@ -105,13 +108,13 @@ Polysynth_v2/
 │   │       └── debate.py       # DebateRunner
 │   └── datebase/               # 数据层
 │       ├── stream_events.py    # StreamEvent 事件类型定义
-│       ├── models.py           # SQLAlchemy ORM 模型
+│       ├── models.py           # SQLAlchemy ORM 模型（SessionRecord, Message, Attachment, ModeConfig, Participant, Provider, ProviderModel）
 │       ├── engine.py           # 异步引擎 + session 工厂
 │       └── crud.py             # CRUD 操作 + seed 初始化
 ├── frontend/                   # React 前端
 │   ├── src/
 │   │   ├── api/                # axios client + types + API 函数
-│   │   ├── components/         # UI 组件（ConfigPanel, ChatView, Sidebar 等）
+│   │   ├── components/         # UI 组件（ConfigPanel, ChatView, Sidebar, FileUploadZone 等）
 │   │   ├── hooks/              # useWebSocket, useSessions
 │   │   ├── stores/             # zustand UI 状态
 │   │   ├── lib/                # 工具函数
@@ -123,6 +126,7 @@ Polysynth_v2/
 │   └── tsconfig.app.json
 ├── sessions/                   # 运行时生成（session jsonl + state）
 ├── logs/                       # 运行时日志（gitignore）
+├── uploads/                    # 上传文件存储（gitignore）
 └── polysynth.db                # SQLite 数据库（运行时生成，gitignore）
 ```
 
@@ -155,19 +159,21 @@ TerminalOutputHandler ──────────────► 终端颜色
 ```
 浏览器 (React)
     │
-    │ POST /api/sessions {mode, topic}
+    │ POST /api/sessions {mode, topic, files}  (multipart/form-data)
     ▼
 后端 (FastAPI)
     │-- 创建 DB session 记录
+    │-- 文件保存到 uploads/，提取文本生成 AI 摘要，存入 Attachment 表
     │-- 前端连接 WS /api/sessions/ws/{id}
     ▼
 WebSocket handler
     │-- RuntimeConfig.from_db() 从数据库加载配置
+    │-- 附件摘要注入到所有角色的 system prompt 作为背景资料
     │-- Session(id, runtime_config=cfg, db_callback=...)
     │-- WebSocketOutputHandler(websocket)
     │-- session.run() 后台运行
     ▼
-浏览器实时接收 JSON 事件 → ChatView 渲染流式消息
+浏览器实时接收 JSON 事件 → ChatView 渲染流式消息（历史消息 + 实时事件合并显示）
 ```
 
 ### 关键设计
@@ -181,15 +187,23 @@ WebSocket handler
   - 当前实现 `search` 工具，使用 DuckDuckGo 免费搜索 API
   - 工具调用采用**双阶段**设计：阶段一非流式检测 `tool_calls` → 执行工具 → 阶段二流式输出最终答案
   - `search_web` 通过 `asyncio.to_thread()` 在线程池中执行，避免阻塞事件循环
+- **文件上传与背景资料注入**：
+  - 支持 `txt/md/pdf/docx/xlsx/pptx` 六种格式，单文件 20MB，最多 5 个文件
+  - 创建 session 时通过 `multipart/form-data` 上传
+  - `file_parser.py` 提取文本内容 → `summarizer.py` 调用 LLM 生成结构化摘要 → 存入 `Attachment` 表
+  - 讨论开始时，附件摘要注入所有角色的 system prompt（`【背景资料】` 段落），作为讨论依据
 - **统一日志模块**（`backend/core/logger.py`）：
   - 同时输出到控制台和 `logs/app.log`
   - `TimedRotatingFileHandler` 按天轮转，保留 7 天
   - 支持 `LOG_LEVEL` 环境变量调整级别（默认 INFO）
+  - 内置 `restore_loggers()` 防御 uvicorn 的 `dictConfig` 禁用自定义 logger
 - **Config 双轨制**：
   - `Config`（`backend/core/config.py`）：文件单例，CLI 模式使用
   - `RuntimeConfig`（`backend/core/runtime_config.py`）：运行时从数据库加载，Web 模式使用
   - `Session.get_config()` 优先 `runtime_config`，否则 fallback 到 `Config.get()`
 - **DB + 文件双写**：Web 模式下 `TurnEndEvent` 同时写入 SQLite `messages` 表和 `.jsonl` 文件
+- **ChatView 合并渲染**：`historyMessages`（数据库历史）和 `events`（WebSocket 实时事件）合并显示，而非互斥。切换回 running 会话时先加载历史，再追加新事件
+- **WebSocket 断开状态清理**：用户关闭页面或切换会话导致 WebSocket 断开时，后台任务被取消，session status 自动更新为 `completed`，避免永远卡在 running
 - **Seed 初始化**：FastAPI lifespan 中 `seed_db_from_files()` 从 JSON 导入默认配置到数据库
 
 ### 切换模式
@@ -220,7 +234,7 @@ CLI 兼容：如果数据库中未找到 provider，回退到 `Config` 单例的
 - **`agent_generator.py` 的 `_provider_cache` 是进程级永久缓存**：修改供应商配置后，必须调用 `clear_provider_cache()` 清除缓存，否则 `call_llm()` 仍使用旧的 api_key/base_url。已在 `config.py` 路由的增删改操作中自动调用。
 - **`core/modes/six_hat.py` 和 `core/modes/debate.py` 中的 `_run_role()` 构建了一个非常大的 system prompt**（包含话题、历史、角色、轮数等元信息）。如果未来历史很长，这会导致 token 超限。应考虑将历史作为 `messages` 参数传入，而不是塞进 system prompt。
 - **`Prompts.py` 中的 system prompt 禁止了动作描写**（`禁止描写任何角色的动作、神态、表情或场景`），这是为了防止 LLM 输出类似"（推了推眼镜）"的舞台指示。
-- WebSocket 连接断开后，后台的 `session.run()` 任务会被取消，但已产生的消息已持久化到 DB。
+- **WebSocket 断开后状态自动清理**：`session_websocket` 的 `finally` 中捕获 `CancelledError` 并更新 DB status 为 `completed`，防止 session 永远卡在 running。
 - **全局主持人（GlobalHost）的特殊性**：所有模式共享同一主持人的 `name`/`model`/`color`，但各模式的 `system_prompt` 独立存储在 `participants` 表中。`RuntimeConfig.from_db()` 注入全局配置时**只覆盖外观字段，不覆盖 prompt**。
 - **颜色编码兼容性**：前端使用 Hex 颜色（`#RRGGBB`），CLI 使用 ANSI 转义码（`[3Xm`）。`frontend/src/lib/colors.ts` 提供 `ansiToHex()` 和 `hexToAnsi()` 双向转换，使用 16 色映射表 + 欧氏距离最近匹配作为 fallback。
 - **辩论赛角色清理**：`seed_db_from_files()` 在 upsert 新参与者后会**删除当前模式中不在配置文件里的旧角色**。删除 `polysynth.db` 重启后端即可自动清理（如移除旧版遗留的"正方"/"反方"角色）。
