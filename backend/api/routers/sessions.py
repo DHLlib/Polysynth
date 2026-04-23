@@ -194,7 +194,13 @@ async def session_websocket(websocket: WebSocket, session_id: str):
         try:
             await task
         except asyncio.CancelledError:
-            pass
+            # 用户主动断开，标记为 completed
+            async with AsyncSessionLocal() as db:
+                db_session = await get_session_record(db, session_id)
+                if db_session and db_session.status == "running":
+                    await update_session_status(db, session_id, "completed")
+                    await db.commit()
+            logger.info(f"Session marked completed after disconnect: {session_id}")
 
 
 async def _run_discussion(disc_session: DiscussionSession, session_id: str):

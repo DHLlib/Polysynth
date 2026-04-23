@@ -29,11 +29,27 @@ _handler_file = TimedRotatingFileHandler(
 _handler_file.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))
 
 
+_OUR_LOGGERS: set[str] = set()
+
+
 def get_logger(name: str) -> logging.Logger:
     """获取指定名称的日志记录器。支持 LOG_LEVEL 环境变量调整级别。"""
     logger = logging.getLogger(name)
+    _OUR_LOGGERS.add(name)
+    logger.disabled = False
     if not logger.handlers:
         logger.addHandler(_handler_console)
         logger.addHandler(_handler_file)
     logger.setLevel(_LOG_LEVEL)
     return logger
+
+
+def restore_loggers() -> None:
+    """恢复被 uvicorn 等框架禁用的自定义 logger。"""
+    for name in _OUR_LOGGERS:
+        log = logging.getLogger(name)
+        log.disabled = False
+        if not log.handlers:
+            log.addHandler(_handler_console)
+            log.addHandler(_handler_file)
+        log.setLevel(_LOG_LEVEL)
