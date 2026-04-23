@@ -165,7 +165,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             response = await acompletion(**phase1_kwargs)
             msg = response.choices[0].message
 
-            if getattr(msg, "tool_calls", None):
+            tc_list = getattr(msg, "tool_calls", None)
+            logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={len(tc_list) if tc_list else 0}, content={msg.content[:80] if msg.content else '(none)'}...")
+            if tc_list:
                 # 执行工具
                 tool_results = []
                 for tc in msg.tool_calls:
