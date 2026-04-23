@@ -41,6 +41,14 @@ Polysynth_v2/
 │   │   ├── config.py              # Config 文件单例（CLI 兼容）
 │   │   ├── runtime_config.py      # RuntimeConfig 运行时配置（Web 模式）
 │   │   ├── output_handlers.py     # TerminalOutputHandler + WebSocketOutputHandler
+│   │   ├── logger.py              # 统一日志（console + 文件轮转，防 uvicorn 禁用）
+│   │   ├── file_parser.py         # 文件内容提取（txt/md/pdf/docx/xlsx/pptx）
+│   │   ├── summarizer.py          # AI 文件摘要生成器
+│   │   ├── tools/                 # Agent 工具层
+│   │   │   ├── __init__.py
+│   │   │   ├── schema.py          # ToolSchema 定义
+│   │   │   ├── registry.py        # 工具注册表
+│   │   │   └── search.py          # DuckDuckGo 搜索工具
 │   │   └── modes/
 │   │       ├── base.py            # ModeRunner Protocol
 │   │       ├── registry.py        # 模式注册表
@@ -48,7 +56,7 @@ Polysynth_v2/
 │   │       └── debate.py          # DebateRunner
 │   └── datebase/                  # 数据层
 │       ├── stream_events.py       # StreamEvent 事件类型定义
-│       ├── models.py              # SQLAlchemy ORM 模型
+│       ├── models.py              # SQLAlchemy ORM 模型（SessionRecord, Message, Attachment, ModeConfig, Participant, Provider, ProviderModel）
 │       ├── engine.py              # 异步引擎 + session 工厂
 │       └── crud.py                # CRUD 操作 + seed 初始化
 ├── frontend/                      # React 前端
@@ -63,7 +71,9 @@ Polysynth_v2/
 │   ├── vite.config.ts
 │   └── tsconfig.app.json
 ├── sessions/                      # 运行时生成：jsonl + state.json
-├── polysynth.db                   # SQLite 数据库（运行时生成）
+├── logs/                          # 运行时日志（gitignore）
+├── uploads/                       # 上传文件存储（gitignore）
+├── polysynth.db                   # SQLite 数据库（运行时生成，gitignore）
 ├── docs/                          # 本文档
 └── test_kimi_code.py              # API 连通性测试
 ```
@@ -143,17 +153,14 @@ class ModeRunner(Protocol):
 
 注册：新增模式需在 `registry.py` 的 `_REGISTRY` 中注册。
 
-### 3.5 StreamEvent（事件流）
+### 3.5 Logger（统一日志）
 
-**文件**：`backend/datebase/stream_events.py`
+**文件**：`backend/core/logger.py`
 
-| 事件类型 | 触发时机 | 用途 |
-|----------|----------|------|
-| `TurnStartEvent` | 角色开始发言 | 打印横幅/设置颜色/前端显示角色名 |
-| `TokenEvent` | 收到流式 token | 实时打印/前端逐字显示 |
-| `TurnEndEvent` | 角色发言结束 | 更新历史 + 持久化 jsonl + 写入 DB |
-| `BannerEvent` | 轮次/阶段切换 | 打印大横幅/前端显示阶段提示 |
-| `SessionEndEvent` | 整场讨论结束 | 打印结束语/前端标记完成 |
+- 同时输出到控制台 `StreamHandler(sys.stdout)` 和 `logs/app.log`（`TimedRotatingFileHandler`，按天轮转，保留 7 天）
+- 支持 `LOG_LEVEL` 环境变量（默认 INFO）
+- 内置 `restore_loggers()` 防御 uvicorn 启动时的 `dictConfig(disable_existing_loggers=True)` 禁用自定义 logger
+- `get_logger(name)` 维护 `_OUR_LOGGERS` 集合，lifespan 中调用 `restore_loggers()` 恢复
 
 ### 3.6 call_llm（LLM 调用层）
 
@@ -163,6 +170,11 @@ class ModeRunner(Protocol):
 
 - 通过 LiteLLM 流式调用 LLM
 - yield token
+- 双阶段工具调用：Phase 1 非流式检测 `tool_calls` → 执行工具 → Phase 2 流式输出最终答案
+- 动态 temperature：Phase 1 / 有工具时 `0.3`，Phase 2 / 普通对话 `0.8`
+- Phase 2 强制 `tool_choice="none"`，防止模型基于工具结果再次调用工具
+- 工具结果摘要写入 `session.add_history()`，确保后续轮次可见
+- DSML 标签过滤（DeepSeek 输出中的 `<｜DSML｜tool_calls>`）
 
 接受 `cfg` 参数读取 API keys（`RuntimeConfig` 或 `Config` 均可）。
 
@@ -177,18 +189,32 @@ class ModeRunner(Protocol):
 | `TerminalOutputHandler` | 终端颜色打印、banner、换行重置 | CLI 模式 |
 | `WebSocketOutputHandler` | 将事件序列化为 JSON 通过 WebSocket 发送 | Web 模式 |
 
-### 3.8 数据库层
+### 3.8 文件解析与摘要
 
-**文件**：`backend/datebase/models.py`, `engine.py`, `crud.py`
+**文件**：`backend/core/file_parser.py`、`summarizer.py`
+
+| 模块 | 职责 |
+|------|------|
+| `file_parser.py` | 提取 6 种格式（txt/md/pdf/docx/xlsx/pptx）的文本内容 |
+| `summarizer.py` | 调用 LLM（temperature 0.3）对文件内容生成结构化摘要，截断至 15000 字符 |
+
+创建 session 时，附件保存到 `uploads/`，摘要存入 `attachments` 表，讨论开始时注入所有角色的 system prompt。
+
+### 3.9 数据库层
+
+**文件**：`backend/datebase/models.py`、`engine.py`、`crud.py`
 
 SQLAlchemy 2.0 + aiosqlite，异步 ORM。
 
 | 表 | 用途 |
 |---|---|
 | `mode_configs` | 模式元数据（name, display_name, mode_json, default_rounds） |
-| `participants` | 每模式的角色定义（role_key, model, name, color, system_prompt） |
+| `participants` | 每模式的角色定义（role_key, model, name, color, system_prompt, tools_enabled） |
 | `sessions` | Session 记录（id, mode, topic, rounds, status, created_at） |
 | `messages` | 发言记录（session_id, role_key, role, name, content, model, ts） |
+| `attachments` | 上传文件（session_id, filename, file_type, file_size, storage_path, summary） |
+| `providers` | LLM 供应商（name, api_key, base_url） |
+| `provider_models` | 模型与供应商关联（model_name, provider_name） |
 
 初始化：`seed_db_from_files()` 从 JSON 配置文件幂等导入默认数据。
 
@@ -233,16 +259,18 @@ StreamEvent (yield)
 ```
 浏览器 (React)
     |
-    | POST /api/sessions {mode, topic}
+    | POST /api/sessions {mode, topic, files}  (multipart/form-data)
     | 返回 {id, status: "pending"}
     v
 后端 (FastAPI)
     |-- 创建 DB session 记录
+    |-- 文件保存到 uploads/，提取文本生成 AI 摘要，存入 Attachment 表
     |-- 前端连接 WS /api/sessions/ws/{id}
     v
 WebSocket handler
     |-- 从 DB 加载 mode_config + participants
     |-- RuntimeConfig.from_db()
+    |-- 附件摘要注入所有角色的 system prompt（【背景资料】段落）
     |-- 创建 Session(id, runtime_config=cfg, db_callback=...)
     |-- 注册 WebSocketOutputHandler(websocket)
     |-- asyncio.create_task(session.run()) 后台运行
@@ -253,6 +281,7 @@ Session.run()
     |-- TurnEndEvent 时：jsonl + DB 双写
     v
 浏览器 (React ChatView)
+    |-- 加载历史消息 + 实时事件合并渲染
     |-- turn_start --> 显示角色名 + 颜色边框
     |-- token     --> 逐字追加到当前消息
     |-- turn_end  --> 固化消息，清空流状态
@@ -303,3 +332,4 @@ session.register_output_handler(MyWebSocketHandler())
 1. **Token 超限风险**：`_run_role()` 将完整历史作为 system prompt 的一部分传入。当讨论轮数增多时，token 数会线性增长。未来应将历史作为 `messages` 参数而非 system prompt 传入。
 2. **Session 历史单向增长**：当前 `discussion_history` 只增不减，长会话可能超限。
 3. **无并发控制**：`call_llm()` 同步调用 LiteLLM，多角色并行发言需额外实现。
+4. **多 WebSocket 观看**：当前架构不支持多个客户端同时观看同一个 running session 的讨论流。
