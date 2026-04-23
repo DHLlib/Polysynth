@@ -89,9 +89,18 @@ class SixHatRunner:
                     f"- {t['function']['name']}: {t['function']['description']}"
                     for t in tools
                 )
+                # 根据角色定制工具使用引导
+                if role_key == "white":
+                    usage_guide = (
+                        "当你缺乏确切数据、需要验证某个事实或获取最新统计信息时，"
+                        "请主动调用搜索工具获取实时信息，而不是直接说'缺乏数据'。"
+                    )
+                else:
+                    usage_guide = "需要时请调用工具并等待结果。"
                 system += (
                     f"\n\n【工具说明】你可以使用以下工具辅助思考：\n{tool_desc}\n"
-                    "需要时请调用工具并等待结果。"
+                    f"{usage_guide}\n"
+                    "调用工具后，等待返回结果再继续发言。"
                 )
 
         messages = [{"role": "system", "content": system}] + session.get_history()

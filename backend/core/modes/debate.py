@@ -96,9 +96,18 @@ class DebateRunner:
                     f"- {t['function']['name']}: {t['function']['description']}"
                     for t in tools
                 )
+                # 根据角色定制工具使用引导
+                if role_key in ("pro_1", "pro_2", "con_1", "con_2"):
+                    usage_guide = (
+                        "当你需要引用具体数据、案例或最新事实来支撑论点时，"
+                        "请主动调用搜索工具获取实时信息，增强论证说服力。"
+                    )
+                else:
+                    usage_guide = "需要时请调用工具并等待结果。"
                 system += (
                     f"\n\n【工具说明】你可以使用以下工具辅助思考：\n{tool_desc}\n"
-                    "需要时请调用工具并等待结果。"
+                    f"{usage_guide}\n"
+                    "调用工具后，等待返回结果再继续发言。"
                 )
 
         messages = [{"role": "system", "content": system}] + session.get_history()
