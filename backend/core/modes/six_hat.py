@@ -19,6 +19,34 @@ from backend.datebase.stream_events import (
 logger = get_logger("modes.six_hat")
 
 
+_TOOL_ROLE_GUIDES: dict[str, str] = {
+    "white": "作为事实分析师，当你缺乏确切数据或需要验证某个事实时，请主动调用搜索工具获取实时信息，而不是直接说'缺乏数据'。",
+}
+
+
+def _build_tool_system_msg(role_key: str, tools: list[dict]) -> str:
+    """构建系统级工具使用提示词，放在角色 system prompt 之前以获得更高指令优先级。"""
+    tool_desc = "\n".join(
+        f"- {t['function']['name']}: {t['function']['description']}"
+        for t in tools
+    )
+    lines = [
+        "【系统指令·工具使用】你被赋予了以下工具的使用权限。",
+        "",
+        tool_desc,
+        "",
+        "使用规范：",
+        "1. 当任务需要超出你已有知识的信息时，必须主动调用工具",
+        "2. 不要编造数据或事实，有疑虑时优先调用工具验证",
+        "3. 调用工具后等待返回结果，再继续发言",
+    ]
+    guide = _TOOL_ROLE_GUIDES.get(role_key)
+    if guide:
+        lines.extend(["", f"角色补充：{guide}"])
+    lines.append("")
+    return "\n".join(lines)
+
+
 class SixHatRunner:
     mode_name = "six_hat"
 
@@ -73,8 +101,9 @@ class SixHatRunner:
         if extra_instruction:
             system += f"\n\n【本次额外指示】{extra_instruction}"
 
-        # 检查并注入工具
+        # 检查并注入工具（系统级提示词放在角色定义之前，获得更高优先级）
         tools = None
+        tool_system_msg = ""
         tools_enabled_str = participant.get("tools_enabled")
         if tools_enabled_str:
             try:
@@ -85,25 +114,12 @@ class SixHatRunner:
             if enabled_names:
                 tools = get_tool_schemas(enabled_names)
                 logger.info(f"Tools enabled for {role_key}: {enabled_names}")
-                tool_desc = "\n".join(
-                    f"- {t['function']['name']}: {t['function']['description']}"
-                    for t in tools
-                )
-                # 根据角色定制工具使用引导
-                if role_key == "white":
-                    usage_guide = (
-                        "当你缺乏确切数据、需要验证某个事实或获取最新统计信息时，"
-                        "请主动调用搜索工具获取实时信息，而不是直接说'缺乏数据'。"
-                    )
-                else:
-                    usage_guide = "需要时请调用工具并等待结果。"
-                system += (
-                    f"\n\n【工具说明】你可以使用以下工具辅助思考：\n{tool_desc}\n"
-                    f"{usage_guide}\n"
-                    "调用工具后，等待返回结果再继续发言。"
-                )
+                tool_system_msg = _build_tool_system_msg(role_key, tools)
 
-        messages = [{"role": "system", "content": system}] + session.get_history()
+        messages = [{"role": "system", "content": system}]
+        if tool_system_msg:
+            messages.insert(0, {"role": "system", "content": tool_system_msg})
+        messages.extend(session.get_history())
 
         logger.info(f"Role speak: {role_key}, model={participant['model']}, history={len(messages)}")
         yield TurnStartEvent(
