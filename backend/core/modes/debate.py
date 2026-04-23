@@ -113,6 +113,21 @@ class DebateRunner:
         if extra_instruction:
             system += f"\n\n【额外指示】{extra_instruction}"
 
+        # ── 注入附件摘要 ──
+        from backend.datebase.engine import AsyncSessionLocal
+        from backend.datebase.crud import get_attachments_by_session
+        try:
+            async with AsyncSessionLocal() as db:
+                attachments = await get_attachments_by_session(db, session.session_id)
+                if attachments:
+                    parts = ["\n\n【背景资料】\n以下是从用户上传文件中提取的摘要，请在讨论中充分参考："]
+                    for att in attachments:
+                        if att.summary:
+                            parts.append(f"\n[文件: {att.filename}]\n{att.summary}")
+                    system += "\n".join(parts)
+        except Exception as e:
+            logger.warning(f"Failed to load attachments: {e}")
+
         # 检查并注入工具（系统级提示词放在角色定义之前，获得更高优先级）
         tools = None
         tool_system_msg = ""
