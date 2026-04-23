@@ -83,6 +83,29 @@ class SessionRecord(Base):
         order_by="Message.ts",
         lazy="selectin",
     )
+    attachments: Mapped[List["Attachment"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class Attachment(Base):
+    """用户上传的文件记录。"""
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    file_type: Mapped[str] = mapped_column(String(20))  # pdf, docx, txt, md, xlsx, pptx
+    file_size: Mapped[int] = mapped_column(Integer)
+    storage_path: Mapped[str] = mapped_column(String(500))
+    summary: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    session: Mapped["SessionRecord"] = relationship(back_populates="attachments")
 
 
 class Message(Base):
