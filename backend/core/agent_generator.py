@@ -137,9 +137,10 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
     if cfg is None:
         cfg = Config.get()
 
+    tools_enabled = tools is not None and len(tools) > 0
     kwargs = {
         "model": model,
-        "temperature": 0.3 if tools else 0.8,
+        "temperature": 0.3 if tools_enabled else 0.8,
         "timeout": 180,
     }
 
@@ -170,7 +171,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
     kwargs["messages"] = fixed_messages
 
     # ── Tool 调用：双阶段 ──
-    if tools:
+    if tools_enabled:
         try:
             tool_names = [t["function"]["name"] for t in tools]
             logger.info(f"[LLM·Tools] model={model}, tools={tool_names}, messages={len(fixed_messages)}")
@@ -239,9 +240,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 }
                 phase2_messages = fixed_messages + [assistant_msg] + tool_results
 
-                # 阶段二：流式输出最终答案
+                # 阶段二：流式输出最终答案（创意阶段，恢复高 temperature）
                 logger.info(f"[LLM·Tools·Phase2] model={model}, messages={len(phase2_messages)}")
-                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True, "tool_choice": "none"}
+                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True, "tool_choice": "none", "temperature": 0.8}
                 response2 = await acompletion(**phase2_kwargs)
                 full_reply = ""
                 async for chunk in response2:
