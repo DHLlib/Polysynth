@@ -10,10 +10,12 @@ function ansiToHex(ansi: string): string {
   const map: Record<string, string> = {
     "[94m": "#60a5fa", // blue
     "[97m": "#f3f4f6", // white
-    "[91m": "#f87171", // red
+    "[91m": "#f87171", // bright red
+    "[31m": "#ef4444", // red
     "[90m": "#9ca3af", // gray/black
     "[93m": "#facc15", // yellow
-    "[92m": "#4ade80", // green
+    "[92m": "#4ade80", // bright green
+    "[32m": "#22c55e", // green
     "[96m": "#22d3ee", // cyan
   };
   return map[ansi] || "#a0a0a0";
