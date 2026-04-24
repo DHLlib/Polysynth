@@ -29,12 +29,6 @@ export default function MessageBubble({ name, color, content, isStreaming }: Pro
         style={{ borderLeft: `3px solid ${borderColor}` }}
       >
         <div className="flex items-center gap-2 mb-2">
-          <div
-            className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
-            style={{ backgroundColor: borderColor }}
-          >
-            {name.charAt(0)}
-          </div>
           <span className="text-sm font-semibold" style={{ color: borderColor }}>
             {name}
           </span>
