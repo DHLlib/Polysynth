@@ -192,6 +192,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={tc_count}, details=[{tc_details}], content={msg.content[:80] if msg.content else '(none)'}...")
             else:
                 logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={msg.content[:80] if msg.content else '(none)'}...")
+
+            tool_names = [t["function"]["name"] for t in tools]
+
             if tc_list:
                 # 发送工具开始事件
                 for tc in tc_list:
@@ -276,7 +279,11 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 session.add_history("assistant", history_entry)
                 return
 
-            # LLM 直接回答了，没有调用工具
+            # LLM 直接回答了，没有调用工具——仍然发送工具事件，告知前端"未触发"
+            if role_key and tool_names:
+                for name in tool_names:
+                    yield ToolStartEvent(role_key=role_key, tool_name=name)
+                    yield ToolEndEvent(role_key=role_key, tool_name=name, preview="模型未触发工具调用，直接回答")
             logger.info(f"[LLM·Tools] model={model}, no tool_calls, direct reply")
             if msg.content:
                 for ch in msg.content:
