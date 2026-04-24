@@ -170,6 +170,18 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
     if len(fixed_messages) > 1 and fixed_messages[-1].get("role") == "assistant":
         fixed_messages.append({"role": "user", "content": "请继续发言。"})
 
+    # 如果启用了工具，追加一条强引导 user message 确保触发 function calling
+    if tools_enabled:
+        tool_names = [t["function"]["name"] for t in tools]
+        fixed_messages.append({
+            "role": "user",
+            "content": (
+                f"【强制任务】你现在必须先调用 {'/'.join(tool_names)} 工具获取信息，"
+                "等待结果返回后，再基于工具结果组织你的发言。"
+                "严禁直接回答，严禁编造数据。"
+            ),
+        })
+
     kwargs["messages"] = fixed_messages
 
     # ── Tool 调用：双阶段 ──
