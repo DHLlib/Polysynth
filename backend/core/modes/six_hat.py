@@ -139,9 +139,9 @@ class SixHatRunner:
         if tool_system_msg:
             messages.insert(0, {"role": "system", "content": tool_system_msg})
         messages.extend(session.get_history())
-        # 最后一道防线：在 user message 中明确提醒使用工具
+        # 最后一道防线：在 user message 中强制要求使用工具
         if tools:
-            messages.append({"role": "user", "content": "注意：如果你需要引用数据、事实或最新信息，必须先调用可用工具获取真实信息，严禁编造。"})
+            messages.append({"role": "user", "content": "【强制指令】你现在必须调用可用的 search 工具来获取最新信息，然后基于搜索结果组织你的回答。不要直接回答，不要编造任何数据或案例。请立即调用工具。"})
 
         logger.info(f"Role speak: {role_key}, model={participant['model']}, history={len(messages)}")
         yield TurnStartEvent(

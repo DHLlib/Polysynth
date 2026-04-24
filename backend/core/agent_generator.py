@@ -178,8 +178,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             tool_names = [t["function"]["name"] for t in tools]
             logger.info(f"[LLM·Tools] model={model}, tools={tool_names}, messages={len(fixed_messages)}")
 
-            # 阶段一：非流式，检测 tool_calls
-            phase1_kwargs = {**kwargs, "tools": tools, "stream": False}
+            # 阶段一：非流式，检测 tool_calls（强制启用工具选择）
+            phase1_kwargs = {**kwargs, "tools": tools, "stream": False, "tool_choice": "auto"}
+            logger.debug(f"[LLM·Tools·Phase1·Request] messages={json.dumps(fixed_messages[-2:], ensure_ascii=False)}")
             response = await acompletion(**phase1_kwargs)
             msg = response.choices[0].message
 
