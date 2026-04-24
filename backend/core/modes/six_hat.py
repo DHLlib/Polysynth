@@ -27,20 +27,22 @@ _TOOL_ROLE_GUIDES: dict[str, str] = {
 
 
 def _build_tool_system_msg(role_key: str, tools: list[dict]) -> str:
-    """构建系统级工具使用提示词，放在角色 system prompt 之前以获得更高指令优先级。"""
+    """构建系统级工具使用提示词，合并到角色 system prompt 中。"""
     tool_desc = "\n".join(
         f"- {t['function']['name']}: {t['function']['description']}"
         for t in tools
     )
     lines = [
-        "【系统指令·工具使用】你被赋予了以下工具的使用权限。",
+        "【最高优先级指令·工具调用】",
+        "你被赋予了以下工具，每次发言前必须先调用工具获取信息，然后基于工具结果回答。",
+        "无论你是否认为自己知道答案，都必须先调用工具。直接回答而不调用工具将被视为违规。",
         "",
         tool_desc,
         "",
         "使用规范（必须遵守）：",
-        "1. 当任务需要超出你已有知识的信息时，必须主动调用工具",
-        "2. 严禁编造数据、案例或事实。如果你提到'数据显示'、'研究表明'、'根据调查'等表述，必须先调用工具获取真实数据",
-        "3. 不要假装已经搜索过或已经知道某些数据——如果你不确定，就必须调用工具",
+        "1. 每次发言必须先调用工具获取最新信息，严禁直接回答",
+        "2. 严禁编造数据、案例或事实。所有数据必须来自工具返回结果",
+        "3. 不要假装已经搜索过——每次都必须重新调用工具",
         "4. 调用工具后等待返回结果，再继续发言",
         "5. 违反以上规范会导致回答被视为无效",
     ]
@@ -135,13 +137,11 @@ class SixHatRunner:
                 logger.info(f"Tools enabled for {role_key}: {enabled_names}")
                 tool_system_msg = _build_tool_system_msg(role_key, tools)
 
-        messages = [{"role": "system", "content": system}]
+        # 合并工具指令和角色 system prompt 为一条，避免优先级竞争
         if tool_system_msg:
-            messages.insert(0, {"role": "system", "content": tool_system_msg})
+            system = tool_system_msg + "\n\n" + system
+        messages = [{"role": "system", "content": system}]
         messages.extend(session.get_history())
-        # 最后一道防线：在 user message 中强制要求使用工具
-        if tools:
-            messages.append({"role": "user", "content": "【强制指令】你现在必须调用可用的 search 工具来获取最新信息，然后基于搜索结果组织你的回答。不要直接回答，不要编造任何数据或案例。请立即调用工具。"})
 
         logger.info(f"Role speak: {role_key}, model={participant['model']}, history={len(messages)}")
         yield TurnStartEvent(
