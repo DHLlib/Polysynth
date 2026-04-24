@@ -3,79 +3,79 @@
     "blue": {
       "model": "deepseek/deepseek-reasoner",
       "name": "蓝帽·主持人",
-      "color": "[94m"
+      "color": "\u001b[94m"
     },
     "white": {
       "model": "deepseek/deepseek-chat",
       "name": "白帽·事实",
-      "color": "[97m"
+      "color": "\u001b[97m"
     },
     "red": {
       "model": "deepseek/deepseek-chat",
       "name": "红帽·情感",
-      "color": "[91m"
+      "color": "\u001b[91m"
     },
     "black": {
       "model": "deepseek/deepseek-chat",
       "name": "黑帽·批判",
-      "color": "[90m"
+      "color": "\u001b[90m"
     },
     "yellow": {
       "model": "deepseek/deepseek-chat",
       "name": "黄帽·乐观",
-      "color": "[93m"
+      "color": "\u001b[93m"
     },
     "green": {
       "model": "deepseek/deepseek-chat",
       "name": "绿帽·创意",
-      "color": "[92m"
+      "color": "\u001b[92m"
     }
   },
   "debate": {
     "moderator": {
       "model": "deepseek/deepseek-reasoner",
       "name": "主持人",
-      "color": "[96m"
+      "color": "\u001b[96m"
     },
     "pro_1": {
       "model": "deepseek/deepseek-chat",
       "name": "正方一辩·立论",
-      "color": "[92m"
+      "color": "\u001b[92m"
     },
     "pro_2": {
       "model": "deepseek/deepseek-chat",
       "name": "正方二辩·深化",
-      "color": "[32m"
+      "color": "\u001b[32m"
     },
     "pro_3": {
       "model": "deepseek/deepseek-chat",
       "name": "正方三辩·攻辩",
-      "color": "[92m"
+      "color": "\u001b[92m"
     },
     "pro_4": {
       "model": "deepseek/deepseek-chat",
       "name": "正方四辩·结辩",
-      "color": "[32m"
+      "color": "\u001b[32m"
     },
     "con_1": {
       "model": "deepseek/deepseek-chat",
       "name": "反方一辩·立论",
-      "color": "[91m"
+      "color": "\u001b[91m"
     },
     "con_2": {
       "model": "deepseek/deepseek-chat",
       "name": "反方二辩·深化",
-      "color": "[31m"
+      "color": "\u001b[31m"
     },
     "con_3": {
       "model": "deepseek/deepseek-chat",
       "name": "反方三辩·攻辩",
-      "color": "[91m"
+      "color": "\u001b[91m"
     },
     "con_4": {
       "model": "deepseek/deepseek-chat",
       "name": "反方四辩·结辩",
-      "color": "[31m"
+      "color": "\u001b[31m"
     }
   }
 }
