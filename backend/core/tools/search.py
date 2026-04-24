@@ -2,16 +2,18 @@
 # -*- coding:utf-8 -*-
 """DuckDuckGo 免费搜索工具。"""
 
+import warnings
+
+# 必须在 import duckduckgo_search 之前过滤掉改名警告
+warnings.filterwarnings("ignore", message=".*duckduckgo_search.*renamed.*")
+
 import asyncio
 import os
-import warnings
 
 from backend.core.logger import get_logger
 
 logger = get_logger("tools.search")
 
-# 过滤掉 v8.x 的改名警告（虚拟环境已装 duckduckgo-search）
-warnings.filterwarnings("ignore", message=".*renamed to `ddgs`.*")
 from duckduckgo_search import DDGS
 
 
