@@ -23,26 +23,100 @@ _provider_cache: dict[str, dict] = {}
 def _clean_llm_content(text: str) -> str:
     """统一清洗 LLM 返回的 content，移除 DeepSeek DSML 工具调用标记。
 
+    支持全角(｜)和半角(|)两种变体，支持嵌套标签和同一行内的标签。
     这是 LLM 输出进入系统内部流动的唯一清洗边界。
-    所有从 LLM 获得的 content（无论是 msg.content 还是流式 delta）
-    在 yield 给下游或存入上下文前，都必须经过此函数。
     """
-    if not text or "<｜DSML｜" not in text:
+    if not text:
         return text
 
-    lines = []
-    skip_depth = 0
-    for line in text.split("\n"):
-        stripped = line.strip()
-        if stripped.startswith("<｜DSML｜"):
-            skip_depth += 1
-            continue
-        if stripped.startswith("</｜DSML｜"):
-            skip_depth = max(0, skip_depth - 1)
-            continue
-        if skip_depth <= 0:
-            lines.append(line)
-    return "\n".join(lines)
+    # 快速短路：检查是否包含任何 DSML 特征字符
+    if not any(m in text for m in ["｜DSML", "|DSML", "｜invoke", "|invoke", "｜parameter", "|parameter"]):
+        return text
+
+    result = text
+
+    # 步骤1：移除完整的 DSML 块（最外层到最内层）
+    # 注意：先匹配内层(invoke/parameter)再匹配外层(tool_calls)，避免过度贪婪
+    for tag in ["invoke", "parameter", "tool_calls"]:
+        pattern = rf"<[｜|]DSML[｜|]{tag}[^>]*>.*?</[｜|]DSML[｜|]{tag}>"
+        result = re.sub(pattern, "", result, flags=re.DOTALL)
+
+    # 步骤2：清理残留的独立标签（可能未闭合）
+    result = re.sub(rf"<[｜|]DSML[｜|][^>]*>", "", result)
+    result = re.sub(rf"</[｜|]DSML[｜|][^>]*>", "", result)
+
+    # 步骤3：清理多空行
+    result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
+
+    return result.strip()
+
+
+def _parse_dsml_tool_calls(content: str) -> list[dict] | None:
+    """从 DeepSeek DSML 格式的文本中解析工具调用。
+
+    支持格式示例：
+      <｜DSML｜tool_calls>
+        <｜DSML｜invoke name="search">
+          <｜DSML｜parameter name="query" string="true">关键词</｜DSML｜parameter>
+          <｜DSML｜parameter name="max_results" string="false">5</｜DSML｜parameter>
+        </｜DSML｜invoke>
+      </｜DSML｜tool_calls>
+
+    返回标准 tool_calls 格式的列表，解析失败返回 None。
+    """
+    if not content:
+        return None
+
+    # 同时匹配全角(｜)和半角(|)
+    # 提取所有 invoke 块
+    invoke_pattern = re.compile(
+        r"<[｜|]DSML[｜|]invoke\s+name=\"(\w+)\"\s*>"
+        r"(.*?)"
+        r"</[｜|]DSML[｜|]invoke>",
+        re.DOTALL,
+    )
+
+    param_pattern = re.compile(
+        r"<[｜|]DSML[｜|]parameter\s+name=\"(\w+)\""
+        r"(?:\s+string=\"(?:true|false)\")?\s*>"
+        r"(.*?)"
+        r"</[｜|]DSML[｜|]parameter>",
+        re.DOTALL,
+    )
+
+    tool_calls = []
+    for inv_match in invoke_pattern.finditer(content):
+        fn_name = inv_match.group(1)
+        inv_body = inv_match.group(2)
+
+        args = {}
+        for param_match in param_pattern.finditer(inv_body):
+            param_name = param_match.group(1)
+            param_value = param_match.group(2).strip()
+            args[param_name] = param_value
+
+        # 生成伪 tool_call_id（与标准格式兼容）
+        tc_id = f"call_dsml_{len(tool_calls)}"
+        tool_calls.append({
+            "id": tc_id,
+            "type": "function",
+            "function": {"name": fn_name, "arguments": json.dumps(args, ensure_ascii=False)},
+        })
+
+    return tool_calls if tool_calls else None
+
+
+def _dict_to_tool_call(d: dict):
+    """将标准格式的 tool_call dict 包装为与 OpenAI response 兼容的对象。"""
+    from types import SimpleNamespace
+
+    tc = SimpleNamespace()
+    tc.id = d["id"]
+    tc.type = d["type"]
+    tc.function = SimpleNamespace()
+    tc.function.name = d["function"]["name"]
+    tc.function.arguments = d["function"]["arguments"]
+    return tc
 
 
 def clear_provider_cache() -> None:
@@ -214,13 +288,23 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 msg = response.choices[0].message
 
                 tc_list = getattr(msg, "tool_calls", None)
+                dsml_source = "standard"
+
+                # DSML fallback：如果标准 tool_calls 为空，尝试解析 content 中的 DSML
+                if not tc_list and msg.content:
+                    dsml_calls = _parse_dsml_tool_calls(msg.content)
+                    if dsml_calls:
+                        tc_list = [_dict_to_tool_call(d) for d in dsml_calls]
+                        dsml_source = "dsml"
+                        logger.info(f"[LLM·Tools·Phase1] DSML fallback parsed {len(dsml_calls)} calls from content")
+
                 tc_count = len(tc_list) if tc_list else 0
                 content_preview = _clean_llm_content(msg.content or "")[:80] if msg.content else "(none)"
                 if tc_list:
                     tc_details = ", ".join(
                         f"{tc.function.name}({tc.function.arguments})" for tc in tc_list
                     )
-                    logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={tc_count}, details=[{tc_details}], content={content_preview}...")
+                    logger.info(f"[LLM·Tools·Phase1] model={model}, source={dsml_source}, tool_calls={tc_count}, details=[{tc_details}], content={content_preview}...")
                 else:
                     logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={content_preview}...")
 
@@ -254,7 +338,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
 
                 # 执行工具
                 tool_results = []
-                for tc in msg.tool_calls:
+                for tc in tc_list:
                     fn = tc.function
                     args = json.loads(fn.arguments) if fn.arguments else {}
                     logger.info(f"[ToolCall] {fn.name} args={args}")
@@ -303,7 +387,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                             "type": tc.type,
                             "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                         }
-                        for tc in msg.tool_calls
+                        for tc in tc_list
                     ],
                 }
                 phase2_messages = fixed_messages + [assistant_msg] + tool_results
