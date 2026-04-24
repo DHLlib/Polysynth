@@ -20,8 +20,16 @@ logger = get_logger("agent_generator")
 _provider_cache: dict[str, dict] = {}
 
 
-def _strip_dsml_tags(text: str) -> str:
-    """移除 DeepSeek DSML 工具调用标记，支持嵌套标签。"""
+def _clean_llm_content(text: str) -> str:
+    """统一清洗 LLM 返回的 content，移除 DeepSeek DSML 工具调用标记。
+
+    这是 LLM 输出进入系统内部流动的唯一清洗边界。
+    所有从 LLM 获得的 content（无论是 msg.content 还是流式 delta）
+    在 yield 给下游或存入上下文前，都必须经过此函数。
+    """
+    if not text or "<｜DSML｜" not in text:
+        return text
+
     lines = []
     skip_depth = 0
     for line in text.split("\n"):
@@ -91,7 +99,7 @@ async def _summarize_search_query(
 
     try:
         resp = await acompletion(**llm_kwargs)
-        content = resp.choices[0].message.content or ""
+        content = _clean_llm_content(resp.choices[0].message.content or "")
         query = content.strip().strip('"\'').strip()
         logger.info(f"[SearchQuery] original='{original_query}' -> optimized='{query}'")
         return query if query else original_query
@@ -201,13 +209,14 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
 
             tc_list = getattr(msg, "tool_calls", None)
             tc_count = len(tc_list) if tc_list else 0
+            content_preview = _clean_llm_content(msg.content or "")[:80] if msg.content else "(none)"
             if tc_list:
                 tc_details = ", ".join(
                     f"{tc.function.name}({tc.function.arguments})" for tc in tc_list
                 )
-                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={tc_count}, details=[{tc_details}], content={msg.content[:80] if msg.content else '(none)'}...")
+                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={tc_count}, details=[{tc_details}], content={content_preview}...")
             else:
-                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={msg.content[:80] if msg.content else '(none)'}...")
+                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={content_preview}...")
 
             tool_names = [t["function"]["name"] for t in tools]
 
@@ -258,9 +267,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                         yield ToolEndEvent(role_key=role_key, tool_name=tr["name"], preview=preview)
 
                 # 把 assistant 的 tool_calls 和 tool results 追加到 messages
-                phase1_content = msg.content or ""
-                if "<｜DSML｜" in phase1_content:
-                    phase1_content = _strip_dsml_tags(phase1_content)
+                phase1_content = _clean_llm_content(msg.content or "")
                 assistant_msg = {
                     "role": "assistant",
                     "content": phase1_content,
@@ -282,9 +289,8 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 full_reply = ""
                 async for chunk in response2:
                     delta = chunk.choices[0].delta.content or ""
-                    # 过滤 DeepSeek 可能混入的 DSML 工具调用标记
-                    if "<｜DSML｜" in delta:
-                        delta = _strip_dsml_tags(delta)
+                    # 清洗 LLM 输出，过滤 DeepSeek DSML 标记
+                    delta = _clean_llm_content(delta)
                     if delta:
                         yield delta
                         full_reply += delta
@@ -304,9 +310,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                     yield ToolStartEvent(role_key=role_key, tool_name=name)
                     yield ToolEndEvent(role_key=role_key, tool_name=name, preview="模型未触发工具调用，直接回答")
             logger.info(f"[LLM·Tools] model={model}, no tool_calls, direct reply")
-            direct_content = msg.content or ""
-            if "<｜DSML｜" in direct_content:
-                direct_content = _strip_dsml_tags(direct_content)
+            direct_content = _clean_llm_content(msg.content or "")
             if direct_content:
                 for ch in direct_content:
                     yield ch
@@ -327,7 +331,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
         response = await acompletion(**kwargs)
         async for chunk in response:
             delta = chunk.choices[0].delta.content or ""
-            yield delta
+            delta = _clean_llm_content(delta)
+            if delta:
+                yield delta
     except Exception as e:
         logger.exception(f"[LLM·Error] model={model}, error={e}")
         yield f"[调用失败：{e}]"
