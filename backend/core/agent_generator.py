@@ -201,22 +201,48 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             tool_names = [t["function"]["name"] for t in tools]
             logger.info(f"[LLM·Tools] model={model}, tools={tool_names}, messages={len(fixed_messages)}")
 
-            # 阶段一：非流式，检测 tool_calls（强制启用工具选择）
-            phase1_kwargs = {**kwargs, "tools": tools, "stream": False, "tool_choice": "auto"}
-            logger.debug(f"[LLM·Tools·Phase1·Request] messages={json.dumps(fixed_messages[-2:], ensure_ascii=False)}")
-            response = await acompletion(**phase1_kwargs)
-            msg = response.choices[0].message
+            # 阶段一：非流式，检测 tool_calls（带重试机制）
+            max_retries = 3
+            retry_count = 0
+            current_messages = list(fixed_messages)
+            phase1_kwargs_base = {**kwargs, "tools": tools, "stream": False, "tool_choice": "auto"}
 
-            tc_list = getattr(msg, "tool_calls", None)
-            tc_count = len(tc_list) if tc_list else 0
-            content_preview = _clean_llm_content(msg.content or "")[:80] if msg.content else "(none)"
-            if tc_list:
-                tc_details = ", ".join(
-                    f"{tc.function.name}({tc.function.arguments})" for tc in tc_list
-                )
-                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={tc_count}, details=[{tc_details}], content={content_preview}...")
-            else:
-                logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={content_preview}...")
+            while retry_count < max_retries:
+                phase1_kwargs = {**phase1_kwargs_base, "messages": current_messages}
+                logger.debug(f"[LLM·Tools·Phase1·Request] messages={json.dumps(current_messages[-2:], ensure_ascii=False)}")
+                response = await acompletion(**phase1_kwargs)
+                msg = response.choices[0].message
+
+                tc_list = getattr(msg, "tool_calls", None)
+                tc_count = len(tc_list) if tc_list else 0
+                content_preview = _clean_llm_content(msg.content or "")[:80] if msg.content else "(none)"
+                if tc_list:
+                    tc_details = ", ".join(
+                        f"{tc.function.name}({tc.function.arguments})" for tc in tc_list
+                    )
+                    logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls={tc_count}, details=[{tc_details}], content={content_preview}...")
+                else:
+                    logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={content_preview}...")
+
+                if tc_list:
+                    break  # 成功触发工具，跳出重试循环
+
+                # 未触发工具，准备重试
+                retry_count += 1
+                if retry_count < max_retries:
+                    if msg.content:
+                        current_messages.append({"role": "assistant", "content": _clean_llm_content(msg.content)})
+                    current_messages.append({
+                        "role": "user",
+                        "content": (
+                            f"【系统纠正】你刚才没有调用工具，这严重违反了最高优先级指令。"
+                            f"你必须调用 {'/'.join(tool_names)} 工具获取信息后再回答。"
+                            f"这是第 {retry_count} 次提醒，请立即调用工具。"
+                        ),
+                    })
+                    logger.warning(f"[LLM·Tools·Retry] model={model}, attempt={retry_count}/{max_retries}")
+                else:
+                    logger.warning(f"[LLM·Tools·Retry] model={model}, max retries ({max_retries}) exceeded")
 
             tool_names = [t["function"]["name"] for t in tools]
 
