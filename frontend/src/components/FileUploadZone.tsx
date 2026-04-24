@@ -56,12 +56,12 @@ export function FileUploadZone({ files, onChange }: FileUploadZoneProps) {
       <div
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
-        className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors cursor-pointer"
+        className="border-2 border-dashed border-border/30 rounded-lg p-6 text-center hover:border-border/50 transition-colors cursor-pointer"
       >
-        <Upload className="mx-auto h-8 w-8 text-gray-400" />
-        <p className="mt-2 text-sm text-gray-600">
+        <Upload className="mx-auto h-8 w-8 text-text-muted" />
+        <p className="mt-2 text-sm text-text-secondary">
           拖拽文件到此处，或{" "}
-          <label className="text-blue-600 cursor-pointer hover:underline">
+          <label className="text-accent cursor-pointer hover:underline">
             <input
               type="file"
               multiple
@@ -72,7 +72,7 @@ export function FileUploadZone({ files, onChange }: FileUploadZoneProps) {
             点击上传
           </label>
         </p>
-        <p className="mt-1 text-xs text-gray-400">
+        <p className="mt-1 text-xs text-text-muted">
           最多 {MAX_FILES} 个文件，单个不超过 {MAX_SIZE_MB}MB
         </p>
       </div>
@@ -82,16 +82,16 @@ export function FileUploadZone({ files, onChange }: FileUploadZoneProps) {
           {files.map((file, idx) => (
             <li
               key={`${file.name}-${idx}`}
-              className="flex items-center justify-between bg-gray-50 rounded px-3 py-2 text-sm"
+              className="flex items-center justify-between bg-bg-secondary rounded px-3 py-2 text-sm"
             >
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-gray-500" />
+                <FileText className="h-4 w-4 text-text-muted" />
                 <span className="truncate max-w-[200px]">{file.name}</span>
-                <span className="text-xs text-gray-400">{formatSize(file.size)}</span>
+                <span className="text-xs text-text-muted">{formatSize(file.size)}</span>
               </div>
               <button
                 onClick={() => removeFile(idx)}
-                className="text-gray-400 hover:text-red-500"
+                className="text-text-muted hover:text-red-600"
               >
                 <X className="h-4 w-4" />
               </button>
