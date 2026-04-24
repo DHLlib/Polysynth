@@ -10,9 +10,11 @@ from backend.core.tools import get_tool_schemas
 from backend.datebase.stream_events import (
     BannerEvent,
     SessionEndEvent,
+    ToolEndEvent,
+    ToolStartEvent,
+    TokenEvent,
     TurnEndEvent,
     TurnStartEvent,
-    TokenEvent,
 )
 
 
@@ -149,9 +151,12 @@ class SixHatRunner:
         )
 
         full_reply = ""
-        async for token in call_llm(session, participant["model"], messages, cfg, tools=tools):
-            yield TokenEvent(role_key=role_key, token=token)
-            full_reply += token
+        async for item in call_llm(session, participant["model"], messages, cfg, tools=tools, role_key=role_key):
+            if isinstance(item, str):
+                yield TokenEvent(role_key=role_key, token=item)
+                full_reply += item
+            else:
+                yield item
 
         logger.info(f"Role end: {role_key}, content_len={len(full_reply)}")
         yield TurnEndEvent(role_key=role_key, full_content=full_reply)

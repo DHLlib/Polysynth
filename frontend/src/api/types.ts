@@ -39,7 +39,7 @@ export interface Message {
 }
 
 export interface WSEvent {
-  type: "turn_start" | "token" | "turn_end" | "banner" | "session_end" | "error";
+  type: "turn_start" | "token" | "turn_end" | "banner" | "session_end" | "tool_start" | "tool_end" | "error";
   payload: Record<string, any>;
 }
 
@@ -87,4 +87,7 @@ export interface StreamingMessage {
   tokens: string[];
   full_content: string | null;
   is_complete: boolean;
+  tool_status?: "start" | "end";
+  tool_name?: string;
+  tool_preview?: string;
 }

@@ -31,6 +31,10 @@ class TerminalOutputHandler:
                 print(RESET)
             case "SessionEndEvent":
                 print(f"\n完整讨论记录已保存\n")
+            case "ToolStartEvent":
+                print(f"\n[{event.role_key}] 正在使用工具: {event.tool_name}\n")
+            case "ToolEndEvent":
+                print(f"[{event.role_key}] 工具 {event.tool_name} 完成: {event.preview[:80]}...\n")
 
     def _print_banner(self, text: str):
         print(f"{CYAN}{BOLD}")
@@ -87,4 +91,21 @@ class WebSocketOutputHandler:
                 await self._ws.send_json({
                     "type": "session_end",
                     "payload": {},
+                })
+            case "ToolStartEvent":
+                await self._ws.send_json({
+                    "type": "tool_start",
+                    "payload": {
+                        "role_key": event.role_key,
+                        "tool_name": event.tool_name,
+                    },
+                })
+            case "ToolEndEvent":
+                await self._ws.send_json({
+                    "type": "tool_end",
+                    "payload": {
+                        "role_key": event.role_key,
+                        "tool_name": event.tool_name,
+                        "preview": event.preview,
+                    },
                 })

@@ -12,6 +12,7 @@ from litellm import acompletion
 from backend.core.config import Config
 from backend.core.logger import get_logger
 from backend.core.tools import get_tool_schemas, execute_tool
+from backend.datebase.stream_events import ToolStartEvent, ToolEndEvent
 
 logger = get_logger("agent_generator")
 
@@ -123,7 +124,7 @@ async def _resolve_provider(model: str) -> dict:
     return {}
 
 
-async def call_llm(session, model: str, messages: list, cfg=None, tools: list[dict] | None = None):
+async def call_llm(session, model: str, messages: list, cfg=None, tools: list[dict] | None = None, role_key: str = ""):
     """
     底层异步流式调用 LLM。
 
@@ -132,7 +133,8 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
     :param messages: 完整消息列表
     :param cfg: RuntimeConfig 或 Config 实例
     :param tools: OpenAI function schema 列表，传入时启用工具调用
-    :yield: 每个流式 token
+    :param role_key: 角色标识，用于工具事件
+    :yield: 每个流式 token (str) 或工具事件对象
     """
     if cfg is None:
         cfg = Config.get()
@@ -191,6 +193,11 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             else:
                 logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={msg.content[:80] if msg.content else '(none)'}...")
             if tc_list:
+                # 发送工具开始事件
+                for tc in tc_list:
+                    if role_key:
+                        yield ToolStartEvent(role_key=role_key, tool_name=tc.function.name)
+
                 # 执行工具
                 tool_results = []
                 for tc in msg.tool_calls:
@@ -224,6 +231,12 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                         "name": fn.name,
                         "content": result,
                     })
+
+                # 发送工具结束事件（带结果预览）
+                if role_key:
+                    for tr in tool_results:
+                        preview = tr["content"][:200] + "..." if len(tr["content"]) > 200 else tr["content"]
+                        yield ToolEndEvent(role_key=role_key, tool_name=tr["name"], preview=preview)
 
                 # 把 assistant 的 tool_calls 和 tool results 追加到 messages
                 assistant_msg = {

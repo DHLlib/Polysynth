@@ -39,10 +39,25 @@ class SessionEndEvent:
     pass
 
 
+@dataclass(frozen=True)
+class ToolStartEvent:
+    role_key: str
+    tool_name: str
+
+
+@dataclass(frozen=True)
+class ToolEndEvent:
+    role_key: str
+    tool_name: str
+    preview: str
+
+
 StreamEvent = Union[
     TurnStartEvent,
     TokenEvent,
     TurnEndEvent,
     BannerEvent,
     SessionEndEvent,
+    ToolStartEvent,
+    ToolEndEvent,
 ]

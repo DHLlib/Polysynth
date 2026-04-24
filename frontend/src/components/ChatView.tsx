@@ -60,6 +60,33 @@ export default function ChatView({ events, historyMessages }: Props) {
           }
           break;
         }
+        case "tool_start": {
+          msgs.push({
+            role_key: "__tool__",
+            role_name: "",
+            color: "",
+            tokens: [],
+            full_content: null,
+            is_complete: true,
+            tool_status: "start",
+            tool_name: ev.payload.tool_name,
+          });
+          break;
+        }
+        case "tool_end": {
+          msgs.push({
+            role_key: "__tool__",
+            role_name: "",
+            color: "",
+            tokens: [],
+            full_content: null,
+            is_complete: true,
+            tool_status: "end",
+            tool_name: ev.payload.tool_name,
+            tool_preview: ev.payload.preview,
+          });
+          break;
+        }
         case "session_end": {
           if (current) {
             current.is_complete = true;
@@ -98,6 +125,29 @@ export default function ChatView({ events, historyMessages }: Props) {
                   {msg.full_content}
                 </span>
               </div>
+            </div>
+          );
+        }
+
+        if (msg.role_key === "__tool__") {
+          return (
+            <div key={`tool-${i}`} className="py-1 px-4">
+              {msg.tool_status === "start" ? (
+                <div className="flex items-center gap-2 text-xs text-text-muted animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                  <span>正在使用 {msg.tool_name} 工具...</span>
+                </div>
+              ) : (
+                <details className="text-xs text-text-muted">
+                  <summary className="cursor-pointer flex items-center gap-1.5 hover:text-text-secondary transition-colors">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                    <span>{msg.tool_name} 结果预览（点击展开）</span>
+                  </summary>
+                  <p className="mt-1 pl-3 text-text-secondary leading-relaxed whitespace-pre-wrap">
+                    {msg.tool_preview}
+                  </p>
+                </details>
+              )}
             </div>
           );
         }
