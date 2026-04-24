@@ -20,18 +20,21 @@ logger = get_logger("agent_generator")
 _provider_cache: dict[str, dict] = {}
 
 
-# DeepSeek 模型在工具调用后可能输出的 DSML 标记正则
-_DSML_BLOCK_RE = re.compile(r"<｜DSML｜[^>]*>.*?</｜DSML｜[^>]*>", re.DOTALL)
-_DSML_START_RE = re.compile(r"<｜DSML｜[^>]*>")
-
-
 def _strip_dsml_tags(text: str) -> str:
-    """移除 DeepSeek DSML 工具调用标记，避免前端显示乱码。"""
-    # 先尝试匹配完整块
-    cleaned = _DSML_BLOCK_RE.sub("", text)
-    # 再兜底移除未闭合的开始标签
-    cleaned = _DSML_START_RE.sub("", cleaned)
-    return cleaned
+    """移除 DeepSeek DSML 工具调用标记，支持嵌套标签。"""
+    lines = []
+    skip_depth = 0
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("<｜DSML｜"):
+            skip_depth += 1
+            continue
+        if stripped.startswith("</｜DSML｜"):
+            skip_depth = max(0, skip_depth - 1)
+            continue
+        if skip_depth <= 0:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def clear_provider_cache() -> None:
@@ -255,9 +258,12 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                         yield ToolEndEvent(role_key=role_key, tool_name=tr["name"], preview=preview)
 
                 # 把 assistant 的 tool_calls 和 tool results 追加到 messages
+                phase1_content = msg.content or ""
+                if "<｜DSML｜" in phase1_content:
+                    phase1_content = _strip_dsml_tags(phase1_content)
                 assistant_msg = {
                     "role": "assistant",
-                    "content": msg.content or "",
+                    "content": phase1_content,
                     "tool_calls": [
                         {
                             "id": tc.id,
@@ -298,8 +304,11 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                     yield ToolStartEvent(role_key=role_key, tool_name=name)
                     yield ToolEndEvent(role_key=role_key, tool_name=name, preview="模型未触发工具调用，直接回答")
             logger.info(f"[LLM·Tools] model={model}, no tool_calls, direct reply")
-            if msg.content:
-                for ch in msg.content:
+            direct_content = msg.content or ""
+            if "<｜DSML｜" in direct_content:
+                direct_content = _strip_dsml_tags(direct_content)
+            if direct_content:
+                for ch in direct_content:
                     yield ch
             return
 
