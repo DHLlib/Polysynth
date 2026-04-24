@@ -23,27 +23,40 @@ _provider_cache: dict[str, dict] = {}
 def _clean_llm_content(text: str) -> str:
     """统一清洗 LLM 返回的 content，移除 DeepSeek DSML 工具调用标记。
 
-    支持全角(｜)和半角(|)两种变体，支持嵌套标签和同一行内的标签。
+    支持三种变体：
+      1. <｜DSML｜...>   (全角连写)
+      2. <|DSML|...>     (半角连写)
+      3. < | DSML | ...> (带空格，最常见)
+    支持嵌套标签和同一行内的标签。
     这是 LLM 输出进入系统内部流动的唯一清洗边界。
     """
     if not text:
         return text
 
-    # 快速短路：检查是否包含任何 DSML 特征字符
-    if not any(m in text for m in ["｜DSML", "|DSML", "｜invoke", "|invoke", "｜parameter", "|parameter"]):
+    # 快速短路：是否包含任何 DSML 特征（避免误匹配普通文本中的 invoke/parameter）
+    dsml_markers = ["｜DSML", "|DSML", "DSML", "< | DSML", "<|DSML", "<｜DSML"]
+    if not any(m in text for m in dsml_markers):
         return text
 
     result = text
 
-    # 步骤1：移除完整的 DSML 块（最外层到最内层）
-    # 注意：先匹配内层(invoke/parameter)再匹配外层(tool_calls)，避免过度贪婪
+    # 步骤1：移除完整的 DSML 块（从内到外，避免过度贪婪）
     for tag in ["invoke", "parameter", "tool_calls"]:
-        pattern = rf"<[｜|]DSML[｜|]{tag}[^>]*>.*?</[｜|]DSML[｜|]{tag}>"
-        result = re.sub(pattern, "", result, flags=re.DOTALL)
+        # 格式1/2: <｜DSML｜tag> 或 <|DSML|tag>
+        p1 = rf"<[｜|]DSML[｜|]{tag}[^>]*>.*?</[｜|]DSML[｜|]{tag}>"
+        result = re.sub(p1, "", result, flags=re.DOTALL)
+        # 格式3: < | DSML | tag> (截图中实测格式)
+        p2 = rf"< \| DSML \| {tag}[^>]*>.*?</ \| DSML \| {tag}>"
+        result = re.sub(p2, "", result, flags=re.DOTALL)
 
-    # 步骤2：清理残留的独立标签（可能未闭合）
-    result = re.sub(rf"<[｜|]DSML[｜|][^>]*>", "", result)
-    result = re.sub(rf"</[｜|]DSML[｜|][^>]*>", "", result)
+    # 步骤2：清理残留的独立标签
+    for p in [
+        rf"<[｜|]DSML[｜|][^>]*>",
+        rf"</[｜|]DSML[｜|][^>]*>",
+        rf"< \| DSML \| [^>]*>",
+        rf"</ \| DSML \| [^>]*>",
+    ]:
+        result = re.sub(p, "", result)
 
     # 步骤3：清理多空行
     result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
@@ -67,32 +80,43 @@ def _parse_dsml_tool_calls(content: str) -> list[dict] | None:
     if not content:
         return None
 
-    # 同时匹配全角(｜)和半角(|)
-    # 提取所有 invoke 块
+    # 同时匹配三种格式：全角连写、半角连写、带空格
+    # 格式1: <｜DSML｜invoke name="search">  格式2: <|DSML|invoke>  格式3: < | DSML | invoke>
     invoke_pattern = re.compile(
-        r"<[｜|]DSML[｜|]invoke\s+name=\"(\w+)\"\s*>"
+        r"(?:<[｜|]DSML[｜|]invoke\s+name=\"(\w+)\"\s*>"
         r"(.*?)"
-        r"</[｜|]DSML[｜|]invoke>",
+        r"</[｜|]DSML[｜|]invoke>)"
+        r"|"
+        r"(?:< \| DSML \| invoke\s+name=\"(\w+)\"\s*>"
+        r"(.*?)"
+        r"</ \| DSML \| invoke>)",
         re.DOTALL,
     )
 
     param_pattern = re.compile(
-        r"<[｜|]DSML[｜|]parameter\s+name=\"(\w+)\""
+        r"(?:<[｜|]DSML[｜|]parameter\s+name=\"(\w+)\""
         r"(?:\s+string=\"(?:true|false)\")?\s*>"
         r"(.*?)"
-        r"</[｜|]DSML[｜|]parameter>",
+        r"</[｜|]DSML[｜|]parameter>)"
+        r"|"
+        r"(?:< \| DSML \| parameter\s+name=\"(\w+)\""
+        r"(?:\s+string=\"(?:true|false)\")?\s*>"
+        r"(.*?)"
+        r"</ \| DSML \| parameter>)",
         re.DOTALL,
     )
 
     tool_calls = []
     for inv_match in invoke_pattern.finditer(content):
-        fn_name = inv_match.group(1)
-        inv_body = inv_match.group(2)
+        # alternation 导致格式1/2用 group(1/2)，格式3用 group(3/4)
+        fn_name = inv_match.group(1) if inv_match.group(1) is not None else inv_match.group(3)
+        inv_body = inv_match.group(2) if inv_match.group(2) is not None else inv_match.group(4)
 
         args = {}
         for param_match in param_pattern.finditer(inv_body):
-            param_name = param_match.group(1)
-            param_value = param_match.group(2).strip()
+            # 同上
+            param_name = param_match.group(1) if param_match.group(1) is not None else param_match.group(3)
+            param_value = (param_match.group(2) if param_match.group(2) is not None else param_match.group(4)).strip()
             args[param_name] = param_value
 
         # 生成伪 tool_call_id（与标准格式兼容）
