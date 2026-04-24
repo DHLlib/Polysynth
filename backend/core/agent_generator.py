@@ -23,7 +23,7 @@ _provider_cache: dict[str, dict] = {}
 def _clean_llm_content(text: str) -> str:
     """统一清洗 LLM 返回的 content，移除 DeepSeek DSML 工具调用标记。
 
-    支持三种变体：
+    支持多种变体：
       1. <｜DSML｜...>   (全角连写)
       2. <|DSML|...>     (半角连写)
       3. < | DSML | ...> (带空格，最常见)
@@ -33,10 +33,15 @@ def _clean_llm_content(text: str) -> str:
     if not text:
         return text
 
-    # 快速短路：是否包含任何 DSML 特征（避免误匹配普通文本中的 invoke/parameter）
-    dsml_markers = ["｜DSML", "|DSML", "DSML", "< | DSML", "<|DSML", "<｜DSML"]
-    if not any(m in text for m in dsml_markers):
+    # 快速短路：是否包含任何 DSML 特征
+    # 竖线变体：U+007C |  U+FF5C ｜  U+2223 ∣  U+01C0 ǀ  U+2758 ❘
+    dsml_markers = ["｜DSML", "|DSML", "DSML", "< | DSML", "<|DSML", "<｜DSML",
+                    "< ∣ DSML", "< ǀ DSML", "< ❘ DSML"]
+    has_marker = any(m in text for m in dsml_markers)
+    if not has_marker:
         return text
+
+    logger.debug(f"[DSML·Filter·IN]  len={len(text)} text={text[:300]!r}")
 
     result = text
 
@@ -48,6 +53,9 @@ def _clean_llm_content(text: str) -> str:
         # 格式3: < | DSML | tag> (截图中实测格式)
         p2 = rf"< \| DSML \| {tag}[^>]*>.*?</ \| DSML \| {tag}>"
         result = re.sub(p2, "", result, flags=re.DOTALL)
+        # 格式4: 其他竖线变体带空格
+        p3 = rf"< [｜|∣ǀ❘] DSML [｜|∣ǀ❘] {tag}[^>]*>.*?</ [｜|∣ǀ❘] DSML [｜|∣ǀ❘] {tag}>"
+        result = re.sub(p3, "", result, flags=re.DOTALL)
 
     # 步骤2：清理残留的独立标签
     for p in [
@@ -55,13 +63,23 @@ def _clean_llm_content(text: str) -> str:
         rf"</[｜|]DSML[｜|][^>]*>",
         rf"< \| DSML \| [^>]*>",
         rf"</ \| DSML \| [^>]*>",
+        rf"< [｜|∣ǀ❘] DSML [｜|∣ǀ❘] [^>]*>",
+        rf"</ [｜|∣ǀ❘] DSML [｜|∣ǀ❘] [^>]*>",
     ]:
         result = re.sub(p, "", result)
 
     # 步骤3：清理多空行
     result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
+    result = result.strip()
 
-    return result.strip()
+    # 保守回退：如果过滤后仍包含 DSML 标记，直接返回空字符串
+    still_has = any(m in result for m in dsml_markers)
+    if still_has:
+        logger.warning(f"[DSML·Filter·FAIL] 过滤不彻底，返回空。原始={text[:300]!r} 过滤后={result[:300]!r}")
+        return ""
+
+    logger.debug(f"[DSML·Filter·OUT] len={len(result)} text={result[:300]!r}")
+    return result
 
 
 def _parse_dsml_tool_calls(content: str) -> list[dict] | None:
@@ -311,26 +329,31 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 response = await acompletion(**phase1_kwargs)
                 msg = response.choices[0].message
 
+                # 详细日志：记录 Phase 1 返回的原始 content
+                raw_content = msg.content or ""
+                if raw_content:
+                    logger.debug(f"[LLM·Tools·Phase1·Raw] model={model}, content_len={len(raw_content)}, content_repr={raw_content[:500]!r}")
+
                 tc_list = getattr(msg, "tool_calls", None)
                 dsml_source = "standard"
 
                 # DSML fallback：如果标准 tool_calls 为空，尝试解析 content 中的 DSML
-                if not tc_list and msg.content:
-                    dsml_calls = _parse_dsml_tool_calls(msg.content)
+                if not tc_list and raw_content:
+                    dsml_calls = _parse_dsml_tool_calls(raw_content)
                     if dsml_calls:
                         tc_list = [_dict_to_tool_call(d) for d in dsml_calls]
                         dsml_source = "dsml"
                         logger.info(f"[LLM·Tools·Phase1] DSML fallback parsed {len(dsml_calls)} calls from content")
 
                 tc_count = len(tc_list) if tc_list else 0
-                content_preview = _clean_llm_content(msg.content or "")[:80] if msg.content else "(none)"
+                cleaned_preview = _clean_llm_content(raw_content)[:80] if raw_content else "(none)"
                 if tc_list:
                     tc_details = ", ".join(
                         f"{tc.function.name}({tc.function.arguments})" for tc in tc_list
                     )
-                    logger.info(f"[LLM·Tools·Phase1] model={model}, source={dsml_source}, tool_calls={tc_count}, details=[{tc_details}], content={content_preview}...")
+                    logger.info(f"[LLM·Tools·Phase1] model={model}, source={dsml_source}, tool_calls={tc_count}, details=[{tc_details}], cleaned_preview={cleaned_preview!r}")
                 else:
-                    logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, content={content_preview}...")
+                    logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, cleaned_preview={cleaned_preview!r}")
 
                 if tc_list:
                     break  # 成功触发工具，跳出重试循环
@@ -401,7 +424,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                         yield ToolEndEvent(role_key=role_key, tool_name=tr["name"], preview=preview)
 
                 # 把 assistant 的 tool_calls 和 tool results 追加到 messages
-                phase1_content = _clean_llm_content(msg.content or "")
+                raw_phase1 = msg.content or ""
+                phase1_content = _clean_llm_content(raw_phase1)
+                logger.debug(f"[LLM·Tools·Phase1·Clean] raw_len={len(raw_phase1)} cleaned_len={len(phase1_content)} raw_repr={raw_phase1[:300]!r}")
                 assistant_msg = {
                     "role": "assistant",
                     "content": phase1_content,
@@ -421,13 +446,19 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True, "tool_choice": "none", "temperature": 0.8}
                 response2 = await acompletion(**phase2_kwargs)
                 full_reply = ""
+                chunk_idx = 0
                 async for chunk in response2:
-                    delta = chunk.choices[0].delta.content or ""
+                    delta_raw = chunk.choices[0].delta.content or ""
                     # 清洗 LLM 输出，过滤 DeepSeek DSML 标记
-                    delta = _clean_llm_content(delta)
+                    delta = _clean_llm_content(delta_raw)
+                    if delta_raw and delta != delta_raw:
+                        logger.debug(f"[LLM·Tools·Phase2·Delta] chunk={chunk_idx} raw_len={len(delta_raw)} raw_repr={delta_raw[:200]!r} cleaned_len={len(delta)} cleaned_repr={delta[:200]!r}")
                     if delta:
                         yield delta
                         full_reply += delta
+                    chunk_idx += 1
+
+                logger.info(f"[LLM·Tools·Phase2] model={model}, full_reply_len={len(full_reply)}")
 
                 # 将工具调用上下文写入 session history，确保后续轮次可见
                 tool_summary = "\n\n".join(
@@ -443,8 +474,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 for name in tool_names:
                     yield ToolStartEvent(role_key=role_key, tool_name=name)
                     yield ToolEndEvent(role_key=role_key, tool_name=name, preview="模型未触发工具调用，直接回答")
-            logger.info(f"[LLM·Tools] model={model}, no tool_calls, direct reply")
-            direct_content = _clean_llm_content(msg.content or "")
+            raw_direct = msg.content or ""
+            direct_content = _clean_llm_content(raw_direct)
+            logger.info(f"[LLM·Tools] model={model}, no tool_calls, direct reply, raw_len={len(raw_direct)}, cleaned_len={len(direct_content)}, raw_repr={raw_direct[:300]!r}")
             if direct_content:
                 for ch in direct_content:
                     yield ch
@@ -463,11 +495,15 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             content_preview = str(m.get("content", ""))[:80].replace("\n", " ")
             logger.debug(f"  msg[{i}] role={m['role']} content={content_preview}...")
         response = await acompletion(**kwargs)
+        chunk_idx = 0
         async for chunk in response:
-            delta = chunk.choices[0].delta.content or ""
-            delta = _clean_llm_content(delta)
+            delta_raw = chunk.choices[0].delta.content or ""
+            delta = _clean_llm_content(delta_raw)
+            if delta_raw and delta != delta_raw:
+                logger.debug(f"[LLM·Delta·Clean] chunk={chunk_idx} raw_repr={delta_raw[:200]!r} cleaned_repr={delta[:200]!r}")
             if delta:
                 yield delta
+            chunk_idx += 1
     except Exception as e:
         logger.exception(f"[LLM·Error] model={model}, error={e}")
         yield f"[调用失败：{e}]"
