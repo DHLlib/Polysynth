@@ -5,7 +5,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 
 
 class ParticipantOut(BaseModel):
@@ -88,6 +88,12 @@ class ProviderOut(BaseModel):
     base_url: Optional[str]
     api_key: str
     models: list[ProviderModelOut]
+
+    @field_serializer("api_key")
+    def mask_api_key(self, value: str) -> str:
+        if not value or len(value) <= 4:
+            return "****"
+        return value[:3] + "****" + value[-4:]
 
     class Config:
         from_attributes = True

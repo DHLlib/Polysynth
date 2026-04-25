@@ -89,7 +89,10 @@ async def patch_provider(
 ):
     kwargs = body.model_dump(exclude_unset=True)
     if "api_key" in kwargs:
-        kwargs["api_key"] = _sanitize_str(kwargs["api_key"]) or ""
+        if "****" in kwargs["api_key"]:
+            del kwargs["api_key"]  # 掩码值，不更新
+        else:
+            kwargs["api_key"] = _sanitize_str(kwargs["api_key"]) or ""
     if "base_url" in kwargs:
         kwargs["base_url"] = _sanitize_str(kwargs["base_url"])
     p = await update_provider(db, provider_id, **kwargs)

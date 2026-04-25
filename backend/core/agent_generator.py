@@ -601,8 +601,17 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
 
                 # 阶段二：流式输出最终答案（创意阶段，恢复高 temperature）
                 logger.info(f"[LLM·Tools·Phase2] model={model}, messages={len(phase2_messages)}")
-                # Phase 2 不传递 tools 和 tool_choice，让模型自由输出最终答案
-                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True, "temperature": 0.8}
+                # Phase 2 必须传递 tools（因 assistant_msg 含 tool_calls，Anthropic 需要），
+                # 同时用 tool_choice="none" 阻止模型再次调用工具（R1 不支持故排除）
+                phase2_kwargs = {
+                    **kwargs,
+                    "messages": phase2_messages,
+                    "stream": True,
+                    "temperature": 0.8,
+                    "tools": tools,
+                }
+                if "deepseek-reasoner" not in model:
+                    phase2_kwargs["tool_choice"] = "none"
                 response2 = await acompletion(**phase2_kwargs)
                 full_reply = ""
                 chunk_idx = 0
