@@ -115,7 +115,20 @@ async def cmd_run(args):
     print(f"\n启动 Session: {session_id}")
     print(f"模式: {mode} | 话题: {topic} | 轮次: {rounds}\n")
 
-    session = Session(session_id, runtime_config=runtime_cfg)
+    # DB 回调：将消息同时写入数据库，确保前端可展示
+    async def db_callback(entry: dict):
+        async with AsyncSessionLocal() as db:
+            await crud.append_message(
+                db,
+                session_id,
+                entry["role_key"],
+                entry["role"],
+                entry["name"],
+                entry["content"],
+                entry.get("model"),
+            )
+
+    session = Session(session_id, runtime_config=runtime_cfg, db_callback=db_callback)
     session.register_output_handler(TerminalOutputHandler())
 
     try:
