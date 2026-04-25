@@ -1,134 +1,129 @@
-# Polysynth 架构文档
+# Polysynth Architecture
 
-## 1. 系统概述
+## 1. System Overview
 
-Polysynth 是一个多 LLM Agent 协作讨论模拟器。系统通过"角色扮演"的方式，让多个 AI 角色（如六顶思考帽、辩论双方）围绕同一话题进行结构化多轮讨论，最终输出协作结论。
+Polysynth is a multi-LLM Agent collaborative discussion simulator. The system enables multiple AI roles (e.g., Six Thinking Hats, debate teams) to engage in structured multi-round discussions around a single topic, producing collaborative conclusions.
 
-核心设计理念：
+**Core Design Principles:**
 
-- **Session 驱动**：Session 是调度中心，管理配置、历史、事件路由和持久化
-- **模式可插拔**：新增讨论模式只需实现 `ModeRunner` 协议
-- **事件流统一**：所有输出通过类型化事件流（`StreamEvent`）传递，消费方自行处理
-- **纯数据配置**：角色、Prompt、规则全部外置到 JSON，无需改代码即可切换模式
-- **前后端分离**：FastAPI 提供 REST API + WebSocket，React 前端实时消费事件流
-- **双模运行**：CLI 终端模式与 Web UI 模式共存，共享同一套核心引擎
+- **Session-centric**: Session is the orchestration hub, managing configuration, history, event routing, and persistence.
+- **Pluggable Modes**: New discussion modes only need to implement the `ModeRunner` Protocol.
+- **Unified Event Stream**: All output flows through typed `StreamEvent`s; consumers handle rendering independently.
+- **Pure Data Configuration**: Roles, prompts, and rules are externalized to JSON — switch modes without touching code.
+- **Frontend/Backend Decoupling**: FastAPI provides REST API + WebSocket; React frontend consumes the event stream in real time.
+- **Dual-Mode Runtime**: CLI terminal mode and Web UI mode share the same core engine.
 
-## 2. 目录结构
+---
+
+## 2. Directory Structure
 
 ```
 Polysynth_v2/
 ├── backend/
-│   ├── main.py                    # CLI 入口：创建 Session + TerminalOutputHandler
-│   ├── Prompts.py                 # System Prompt 仓库，按模式分组
+│   ├── main.py                    # CLI entry: argparse subcommands (run/list/replay/status/config)
+│   ├── Prompts.py                 # System Prompt repository, grouped by mode
 │   ├── config/
-│   │   ├── app.json               # 全局配置：topic, rounds, default_mode
-│   │   ├── models.json            # 按模式分组的参与者配置
-│   │   ├── secrets.json           # API Keys（gitignore）
+│   │   ├── app.json               # Global defaults: topic, rounds, default_mode
+│   │   ├── models.json            # Participant defaults by mode (seed source)
+│   │   ├── secrets.json           # API Keys (gitignored)
 │   │   └── modes/
-│   │       ├── six_hat.json       # 六顶思考帽规则
-│   │       └── debate.json        # 辩论赛规则
-│   ├── api/                       # FastAPI Web 服务
+│   │       ├── six_hat.json       # Six Thinking Hats rules
+│   │       └── debate.json        # Debate rules
+│   ├── api/                       # FastAPI Web service
 │   │   ├── main.py                # FastAPI app, lifespan, CORS
 │   │   ├── deps.py                # DB session dependency
-│   │   ├── schemas.py             # Pydantic 请求/响应模型
+│   │   ├── schemas.py             # Pydantic request/response models
 │   │   └── routers/
 │   │       ├── sessions.py        # POST/GET /api/sessions, WS /ws/{id}
-│   │       ├── config.py          # GET /api/config/modes, PATCH /participants/{id}
+│   │       ├── config.py          # GET/PATCH config endpoints (with API key masking)
 │   │       └── modes.py           # GET /api/modes
-│   ├── core/                      # 核心引擎
-│   │   ├── session.py             # Session 驱动中心
-│   │   ├── agent_generator.py     # LLM 调用层（纯 IO）
-│   │   ├── config.py              # Config 文件单例（CLI 兼容）
-│   │   ├── runtime_config.py      # RuntimeConfig 运行时配置（Web 模式）
+│   ├── core/                      # Core engine
+│   │   ├── session.py             # Session driver: history, handlers, persistence
+│   │   ├── agent_generator.py     # LLM call layer via LiteLLM (pure IO)
+│   │   ├── config.py              # Config file singleton (CLI fallback)
+│   │   ├── runtime_config.py      # RuntimeConfig from DB (Web mode)
 │   │   ├── output_handlers.py     # TerminalOutputHandler + WebSocketOutputHandler
-│   │   ├── logger.py              # 统一日志（console + 文件轮转，防 uvicorn 禁用）
-│   │   ├── file_parser.py         # 文件内容提取（txt/md/pdf/docx/xlsx/pptx）
-│   │   ├── summarizer.py          # AI 文件摘要生成器
-│   │   ├── tools/                 # Agent 工具层
+│   │   ├── logger.py              # Unified logging (console + rotating file, anti-uvicorn)
+│   │   ├── file_parser.py         # Text extraction (txt/md/pdf/docx/xlsx/pptx)
+│   │   ├── summarizer.py          # AI file summary generator
+│   │   ├── tools/                 # Agent tool layer
 │   │   │   ├── __init__.py
-│   │   │   ├── schema.py          # ToolSchema 定义
-│   │   │   ├── registry.py        # 工具注册表
-│   │   │   └── search.py          # DuckDuckGo 搜索工具
+│   │   │   ├── schema.py          # ToolSchema dataclass
+│   │   │   ├── registry.py        # Tool registry
+│   │   │   └── search.py          # DuckDuckGo search tool
 │   │   └── modes/
 │   │       ├── base.py            # ModeRunner Protocol
-│   │       ├── registry.py        # 模式注册表
+│   │       ├── registry.py        # Mode registry
 │   │       ├── six_hat.py         # SixHatRunner
 │   │       └── debate.py          # DebateRunner
-│   └── datebase/                  # 数据层
-│       ├── stream_events.py       # StreamEvent 事件类型定义
-│       ├── models.py              # SQLAlchemy ORM 模型（SessionRecord, Message, Attachment, ModeConfig, Participant, Provider, ProviderModel）
-│       ├── engine.py              # 异步引擎 + session 工厂
-│       └── crud.py                # CRUD 操作 + seed 初始化
-├── frontend/                      # React 前端
+│   └── datebase/                  # Data layer
+│       ├── stream_events.py       # StreamEvent type definitions
+│       ├── models.py              # SQLAlchemy ORM models
+│       ├── engine.py              # Async engine + session factory
+│       └── crud.py                # CRUD + seed initialization
+├── frontend/                      # React frontend
 │   ├── src/
-│   │   ├── api/                   # axios client + types + API 函数
-│   │   ├── components/            # UI 组件（Sidebar, ChatView, Header 等）
+│   │   ├── api/                   # Axios client + types + API functions
+│   │   ├── components/            # UI components (Sidebar, ChatView, Header, FileUploadZone, ConfigPanel)
 │   │   ├── hooks/                 # useWebSocket, useSessions
-│   │   ├── stores/                # zustand UI 状态
-│   │   ├── App.tsx                # 根布局
+│   │   ├── stores/                # Zustand UI state
+│   │   ├── lib/                   # Utilities (ANSI <-> Hex color conversion)
+│   │   ├── App.tsx                # Root layout
 │   │   └── main.tsx               # React root + QueryClient
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── tsconfig.app.json
-├── sessions/                      # 运行时生成：jsonl + state.json
-├── logs/                          # 运行时日志（gitignore）
-├── uploads/                       # 上传文件存储（gitignore）
-├── polysynth.db                   # SQLite 数据库（运行时生成，gitignore）
-├── docs/                          # 本文档
-└── test_kimi_code.py              # API 连通性测试
+├── sessions/                      # Runtime: jsonl + state.json
+├── logs/                          # Runtime logs (gitignored)
+├── uploads/                       # Uploaded files (gitignored)
+├── polysynth.db                   # SQLite database (runtime, gitignored)
+├── docs/                          # Documentation
+└── test_kimi_code.py              # API connectivity test
 ```
 
-## 3. 核心组件
+---
 
-### 3.1 Config（配置单例）
+## 3. Core Components
 
-**文件**：`backend/core/config.py`
+### 3.1 Config (File Singleton)
 
-职责：
+**File**: `backend/core/config.py`
 
-- 加载 `app.json` + `models.json` + `secrets.json` + `modes/*.json` + `Prompts.py`
-- 根据 `default_mode` 自动过滤当前模式的 `participants` 和 `prompts`
-- 提供单例访问 `Config.get()`，支持 `Config.reload()` 热更新
+- Loads `app.json` + `models.json` + `secrets.json` + `modes/*.json` + `Prompts.py`
+- Filters `participants` and `prompts` by `default_mode`
+- Provides singleton access via `Config.get()`, supports `Config.reload()` for hot updates
 
-**CLI 模式下使用**。Web 模式下由 `RuntimeConfig.from_db()` 替代。
+**Used in CLI mode as fallback** when `runtime_config` is not provided.
 
-### 3.2 RuntimeConfig（运行时配置）
+### 3.2 RuntimeConfig (Database-Backed)
 
-**文件**：`backend/core/runtime_config.py`
+**File**: `backend/core/runtime_config.py`
 
-`RuntimeConfig` 是 `Config` 的运行时版本（非 frozen、非单例）：
+A non-frozen, non-singleton dataclass with the same fields as `Config`:
 
-- `from_db(db, mode_name, topic)`：从数据库查询 mode_config + participants 构建
-- 字段与 `Config` 一致，Web 模式下 `Session` 通过 `get_config()` 优先返回 `RuntimeConfig`
+- `from_db(db, mode_name, topic)`: queries `ModeConfig` + `Participant` list from DB
+- Injects `GlobalHost` configuration (overrides `name`/`model`/`color`, **preserves** `system_prompt`)
+- `Session.get_config()` prefers `runtime_config`, falls back to `Config.get()`
 
-### 3.3 Session（驱动中心）
+### 3.3 Session (Orchestration Hub)
 
-**文件**：`backend/core/session.py`
+**File**: `backend/core/session.py`
 
-职责：
+| Method | Description |
+|--------|-------------|
+| `add_history(role, content)` | Append LLM message to in-memory history |
+| `get_history()` | Return full history copy as `[{role, content}, ...]` |
+| `register_output_handler(handler)` | Register an async event consumer |
+| `run()` | Main driver: resolve `ModeRunner`, iterate events, forward to handlers, auto-persist |
+| `append_message(entry)` | Append to `.jsonl` message log |
+| `get_config()` | Prefer `runtime_config`, else `Config.get()` |
+| `load(key)` / `save(key, value)` | Read/write `.state.json` |
 
-- 拥有 `discussion_history`（LLM 消息列表），取代旧全局变量
-- 管理运行时状态，持久化到 `.state.json` 和 SQLite `messages` 表
-- 注册输出处理器（`OutputHandler`），统一路由事件流
-- 自动管理历史追加和持久化（jsonl + DB 双写）
-- `get_config()` 优先 `runtime_config`，否则 fallback 到 `Config.get()`
+**Duplicate Detection**: When tool calling is active, `call_llm` may already append tool results to history. `TurnEndEvent` logic detects duplicates via `"【工具调用记录】"` content check to avoid double-writing.
 
-关键方法：
+### 3.4 ModeRunner (Protocol)
 
-| 方法 | 说明 |
-|------|------|
-| `add_history(role, content)` | 追加 LLM 消息到内存历史 |
-| `get_history()` | 返回完整历史副本 |
-| `register_output_handler(handler)` | 注册事件处理器 |
-| `run()` | 主驱动：获取 ModeRunner，迭代事件流，转发处理器，自动持久化 |
-| `append_message(entry)` | 追加到 `.jsonl` 消息日志 |
-| `get_config()` | 优先 runtime_config，否则 Config 单例 |
-
-### 3.4 ModeRunner（模式执行器协议）
-
-**文件**：`backend/core/modes/base.py`
-
-所有讨论模式必须实现：
+**File**: `backend/core/modes/base.py`
 
 ```python
 class ModeRunner(Protocol):
@@ -136,200 +131,204 @@ class ModeRunner(Protocol):
     async def run(self, session: Session) -> AsyncIterator[StreamEvent]: ...
 ```
 
-职责：
+Implementations (`six_hat.py`, `debate.py`):
+- Read mode rules from `session.get_config()`
+- Orchestrate speaking order (opening -> rounds -> summary)
+- Build system prompts (including attachment summaries and tool instructions)
+- Call `call_llm(session, model, messages, cfg, tools)`
+- Yield `StreamEvent`s (no printing, no logging, no history management)
 
-- 从 `session.get_config()` 读取模式规则
-- 编排发言顺序（opening -> rounds -> summary）
-- 构建 system prompt（`Prompts.py` + `extra_instruction`）
-- 调用 `call_llm()` 获取 token
-- yield `StreamEvent`（不处理打印、不记录、不管理历史）
+### 3.5 Logger
 
-现有实现：
+**File**: `backend/core/logger.py`
 
-| 模式 | 文件 | 说明 |
-|------|------|------|
-| six_hat | `backend/core/modes/six_hat.py` | 六顶思考帽 |
-| debate | `backend/core/modes/debate.py` | 辩论赛 |
+- Dual output: console `StreamHandler` + `logs/app.log` (`TimedRotatingFileHandler`, daily rotation, 7-day retention)
+- `LOG_LEVEL` environment variable support (default: INFO)
+- `restore_loggers()` defense against uvicorn's `dictConfig(disable_existing_loggers=True)`
 
-注册：新增模式需在 `registry.py` 的 `_REGISTRY` 中注册。
+### 3.6 call_llm (LLM Call Layer)
 
-### 3.5 Logger（统一日志）
+**File**: `backend/core/agent_generator.py`
 
-**文件**：`backend/core/logger.py`
+Pure IO function via LiteLLM:
 
-- 同时输出到控制台 `StreamHandler(sys.stdout)` 和 `logs/app.log`（`TimedRotatingFileHandler`，按天轮转，保留 7 天）
-- 支持 `LOG_LEVEL` 环境变量（默认 INFO）
-- 内置 `restore_loggers()` 防御 uvicorn 启动时的 `dictConfig(disable_existing_loggers=True)` 禁用自定义 logger
-- `get_logger(name)` 维护 `_OUR_LOGGERS` 集合，lifespan 中调用 `restore_loggers()` 恢复
+- **Dynamic Temperature**: Phase 1 / with tools → `0.3`; Phase 2 / normal chat → `0.8`
+- **Two-Phase Tool Calling**: Phase 1 (non-streaming) detects `tool_calls` → executes tools → Phase 2 (streaming) outputs final answer with `tool_choice="none"` (except R1)
+- **Anthropic Compatibility**: Phase 2 passes `tools` parameter even though `tool_choice="none"` prevents re-invocation, satisfying Anthropic's requirement that messages containing `tool_calls` must also include `tools`
+- **DSML Filtering**: Strips DeepSeek DSML tags (`<｜DSML｜tool_calls>`) and XML tool call formats from final output
+- **Provider Resolution**: `_resolve_provider(model)` queries DB for `api_key` + `base_url`, with process-level `_provider_cache`; `clear_provider_cache()` invalidates on config changes
+- **Search Query Optimization**: `_summarize_search_query()` uses the current role's model to generate optimized search keywords from topic + history
 
-### 3.6 call_llm（LLM 调用层）
+### 3.7 Output Handlers
 
-**文件**：`backend/core/agent_generator.py`
+**File**: `backend/core/output_handlers.py`
 
-纯 IO 函数，只负责：
+| Handler | Purpose | Used In |
+|---------|---------|---------|
+| `TerminalOutputHandler` | Terminal color printing, banners, newline reset | CLI mode |
+| `WebSocketOutputHandler` | Serialize events to JSON over WebSocket | Web mode |
 
-- 通过 LiteLLM 流式调用 LLM
-- yield token
-- 双阶段工具调用：Phase 1 非流式检测 `tool_calls` → 执行工具 → Phase 2 流式输出最终答案
-- 动态 temperature：Phase 1 / 有工具时 `0.3`，Phase 2 / 普通对话 `0.8`
-- Phase 2 强制 `tool_choice="none"`，防止模型基于工具结果再次调用工具
-- 工具结果摘要写入 `session.add_history()`，确保后续轮次可见
-- DSML 标签过滤（DeepSeek 输出中的 `<｜DSML｜tool_calls>`）
+### 3.8 File Parsing & Summarization
 
-接受 `cfg` 参数读取 API keys（`RuntimeConfig` 或 `Config` 均可）。
+| Module | Purpose |
+|--------|---------|
+| `file_parser.py` | Extract text from 6 formats: txt, md, pdf, docx, xlsx, pptx |
+| `summarizer.py` | Call LLM (temperature 0.3) to generate structured summaries, truncated to 15,000 chars |
 
-### 3.7 OutputHandler（输出处理器）
+Attachment flow: file saved to `uploads/` → text extracted → AI summary generated → stored in `attachments` table → injected into all roles' system prompts as `【背景资料】` at discussion start.
 
-**文件**：`backend/core/output_handlers.py`
+### 3.9 Database Layer
 
-消费 `StreamEvent`，执行实际输出：
+**Files**: `backend/datebase/models.py`, `engine.py`, `crud.py`
 
-| 处理器 | 用途 | 使用场景 |
-|--------|------|----------|
-| `TerminalOutputHandler` | 终端颜色打印、banner、换行重置 | CLI 模式 |
-| `WebSocketOutputHandler` | 将事件序列化为 JSON 通过 WebSocket 发送 | Web 模式 |
+SQLAlchemy 2.0 + aiosqlite, async ORM.
 
-### 3.8 文件解析与摘要
+| Table | Purpose |
+|-------|---------|
+| `mode_configs` | Mode metadata (name, display_name, mode_json, default_rounds) |
+| `participants` | Role definitions per mode (role_key, model, name, color, system_prompt, tools_enabled) |
+| `sessions` | Session records (id, mode, topic, rounds, status, created_at, completed_at) |
+| `messages` | Utterances (session_id, role_key, role, name, content, model, ts) |
+| `attachments` | Uploaded files (session_id, filename, file_type, file_size, storage_path, summary) |
+| `providers` | LLM providers (name, api_key, base_url) |
+| `provider_models` | Model-provider bindings (model_name, provider_id) |
+| `global_hosts` | Global host config (name, model, system_prompt, color) |
 
-**文件**：`backend/core/file_parser.py`、`summarizer.py`
+Initialization: `seed_db_from_files()` idempotently imports defaults from JSON config files.
 
-| 模块 | 职责 |
-|------|------|
-| `file_parser.py` | 提取 6 种格式（txt/md/pdf/docx/xlsx/pptx）的文本内容 |
-| `summarizer.py` | 调用 LLM（temperature 0.3）对文件内容生成结构化摘要，截断至 15000 字符 |
+---
 
-创建 session 时，附件保存到 `uploads/`，摘要存入 `attachments` 表，讨论开始时注入所有角色的 system prompt。
+## 4. Data Flow
 
-### 3.9 数据库层
-
-**文件**：`backend/datebase/models.py`、`engine.py`、`crud.py`
-
-SQLAlchemy 2.0 + aiosqlite，异步 ORM。
-
-| 表 | 用途 |
-|---|---|
-| `mode_configs` | 模式元数据（name, display_name, mode_json, default_rounds） |
-| `participants` | 每模式的角色定义（role_key, model, name, color, system_prompt, tools_enabled） |
-| `sessions` | Session 记录（id, mode, topic, rounds, status, created_at） |
-| `messages` | 发言记录（session_id, role_key, role, name, content, model, ts） |
-| `attachments` | 上传文件（session_id, filename, file_type, file_size, storage_path, summary） |
-| `providers` | LLM 供应商（name, api_key, base_url） |
-| `provider_models` | 模型与供应商关联（model_name, provider_name） |
-
-初始化：`seed_db_from_files()` 从 JSON 配置文件幂等导入默认数据。
-
-## 4. 数据流
-
-### 4.1 CLI 模式
+### 4.1 CLI Mode
 
 ```
-backend/main.py
+backend/main.py (argparse: run/list/replay/status/config)
     |
     v
-Session.run() ──────────────────────► get_config() -> Config.get() (文件单例)
+Session.run() ────────► get_config() -> RuntimeConfig.from_db() (or Config.get() fallback)
     |
-    |-- 从 registry 获取 ModeRunner
+    |-- Resolve ModeRunner from registry
     |       `-- SixHatRunner / DebateRunner
     |
     v
 ModeRunner.run(session)
     |
-    |-- 按规则编排发言顺序
-    |-- 构建 system prompt
-    |-- 读取 session.get_history()
+    |-- Orchestrate speaking order
+    |-- Build system prompt (with attachment summaries + tool instructions)
+    |-- Read session.get_history()
     |
     v
-call_llm(session, model, messages, cfg)
+call_llm(session, model, messages, cfg, tools)
     |
+    |-- _resolve_provider(model) -> DB query (cached)
     v
-LiteLLM --> DeepSeek API / Kimi API
+LiteLLM --> DeepSeek API / Kimi API / Anthropic API / etc.
     |
     v
 StreamEvent (yield)
     |
-    |-- TurnStartEvent --> TerminalOutputHandler (打印横幅)
-    |-- TokenEvent     --> TerminalOutputHandler (实时打印)
-    |-- TurnEndEvent   --> Session (更新历史 + 持久化 jsonl)
-    |-- BannerEvent    --> TerminalOutputHandler (阶段横幅)
-    `-- SessionEndEvent --> TerminalOutputHandler (结束)
+    |-- TurnStartEvent --> TerminalOutputHandler (banner + color)
+    |-- TokenEvent     --> TerminalOutputHandler (real-time print)
+    |-- TurnEndEvent   --> Session (update history + persist jsonl + DB callback)
+    |-- BannerEvent    --> TerminalOutputHandler (stage banner)
+    |-- ToolStartEvent --> TerminalOutputHandler (tool usage notice)
+    |-- ToolEndEvent   --> TerminalOutputHandler (tool result preview)
+    `-- SessionEndEvent --> TerminalOutputHandler (completion message)
 ```
 
-### 4.2 Web 模式
+### 4.2 Web Mode
 
 ```
-浏览器 (React)
+Browser (React)
     |
-    | POST /api/sessions {mode, topic, files}  (multipart/form-data)
-    | 返回 {id, status: "pending"}
+    | POST /api/sessions {mode, topic, files} (multipart)
+    | Returns {id, status: "pending"}
     v
-后端 (FastAPI)
-    |-- 创建 DB session 记录
-    |-- 文件保存到 uploads/，提取文本生成 AI 摘要，存入 Attachment 表
-    |-- 前端连接 WS /api/sessions/ws/{id}
+FastAPI
+    |-- Validate files -> Create DB session record
+    |-- Extract text -> AI summary -> Store Attachment
+    |-- Frontend connects WS /api/sessions/ws/{id}
     v
 WebSocket handler
-    |-- 从 DB 加载 mode_config + participants
-    |-- RuntimeConfig.from_db()
-    |-- 附件摘要注入所有角色的 system prompt（【背景资料】段落）
-    |-- 创建 Session(id, runtime_config=cfg, db_callback=...)
-    |-- 注册 WebSocketOutputHandler(websocket)
-    |-- asyncio.create_task(session.run()) 后台运行
+    |-- Validate -> status="running" -> RuntimeConfig.from_db()
+    |-- Inject attachment summaries into system prompts
+    |-- Create Session(id, runtime_config=cfg, db_callback=...)
+    |-- Register WebSocketOutputHandler(websocket)
+    |-- asyncio.create_task(session.run()) in background
     v
 Session.run()
-    |-- 转发事件给 WebSocketOutputHandler
-    |-- WebSocketOutputHandler 发送 JSON 到浏览器
-    |-- TurnEndEvent 时：jsonl + DB 双写
+    |-- Forward events to WebSocketOutputHandler
+    |-- WebSocketOutputHandler sends JSON to browser
+    |-- TurnEndEvent: jsonl + DB dual-write
     v
-浏览器 (React ChatView)
-    |-- 加载历史消息 + 实时事件合并渲染
-    |-- turn_start --> 显示角色名 + 颜色边框
-    |-- token     --> 逐字追加到当前消息
-    |-- turn_end  --> 固化消息，清空流状态
-    |-- banner    --> 居中显示阶段提示
-    |-- session_end --> 标记完成，刷新历史列表
+Browser (React ChatView)
+    |-- Load history messages + merge with real-time events
+    |-- turn_start --> Show role name + color border
+    |-- token     --> Append char-by-char to current message
+    |-- turn_end  --> Solidify message, clear stream state
+    |-- banner    --> Center stage prompt
+    |-- session_end --> Mark complete, refresh sidebar
 ```
 
-## 5. 配置分层
+---
 
-| 文件 | 职责 | 是否提交 git |
-|------|------|-------------|
-| `config/app.json` | 全局：topic, rounds, default_mode | 是 |
-| `config/models.json` | 模式参与者：model, name, color | 是 |
-| `config/modes/*.json` | 模式规则：发言顺序、模板 | 是 |
-| `config/secrets.json` | API Keys | 否 (gitignore) |
-| `Prompts.py` | System Prompt 仓库 | 是 |
-| `polysynth.db` | SQLite 运行时数据库 | 否 (gitignore) |
+## 5. Configuration Layers
 
-Web 模式下，前端运行时只传 `mode` + `topic`，`participants` 和 `rounds` 从数据库读取（用户可修改）。
+| Source | Purpose | Mutable at Runtime | Git Tracked |
+|--------|---------|-------------------|-------------|
+| `config/app.json` | CLI defaults: topic, rounds, default_mode | No | Yes |
+| `config/models.json` | Default role config (seed DB) | No | Yes |
+| `config/modes/*.json` | Mode rules: speaking order, templates | No | Yes |
+| `config/secrets.json` | API Keys | No | No (gitignore) |
+| `Prompts.py` | System Prompt repository | No | Yes |
+| `polysynth.db` | Web/CLI runtime authoritative config | Yes (via Web UI / CLI config) | No (gitignore) |
 
-切换模式：前端选择模式，或修改 `app.json` 中的 `default_mode`（CLI 模式）。
+In Web mode, frontend only sends `mode` + `topic`; `participants` and `rounds` are read from DB (user-modifiable).
 
-## 6. 扩展指南
+In CLI mode, `config` subcommands modify DB directly; `run` without args enters interactive prompt mode.
 
-### 6.1 新增讨论模式
+---
 
-1. **定义参与者**：在 `config/models.json` 新增模式分组
-2. **定义规则**：创建 `config/modes/{mode_name}.json`
-3. **定义 Prompts**：在 `Prompts.py` 的 `SYSTEM_PROMPTS` 新增模式分组
-4. **实现执行器**：创建 `backend/core/modes/{mode_name}.py`，实现 `ModeRunner`
-5. **注册**：在 `registry.py` 的 `_REGISTRY` 中添加映射
-6. **Seed DB**：重启后端自动从 JSON 导入新配置
+## 6. Extension Guide
 
-### 6.2 新增输出处理器
+### 6.1 Add a New Discussion Mode
 
-实现 `async def __call__(self, event: StreamEvent)` 接口，注册到 Session：
+1. Define participants in `config/models.json`
+2. Create `config/modes/{mode_name}.json` with rules
+3. Add prompts in `Prompts.py` under `SYSTEM_PROMPTS`
+4. Implement `backend/core/modes/{mode_name}.py` implementing `ModeRunner`
+5. Register in `registry.py` `_REGISTRY`
+6. Restart backend to auto-seed DB
+
+### 6.2 Add a New Output Handler
+
+Implement `async def __call__(self, event: StreamEvent)` and register:
 
 ```python
-session.register_output_handler(MyWebSocketHandler())
+session.register_output_handler(MyHandler())
 ```
 
-### 6.3 新增 LLM 供应商
+### 6.3 Add a New LLM Provider
 
-在 `call_llm()` 中添加供应商前缀判断和对应的 kwargs 注入。
+Add models via Web UI or CLI:
 
-## 7. 已知限制
+```bash
+python backend/main.py config providers --provider <name> --set-key "sk-xxx" --add-model "provider/model-name"
+```
 
-1. **Token 超限风险**：`_run_role()` 将完整历史作为 system prompt 的一部分传入。当讨论轮数增多时，token 数会线性增长。未来应将历史作为 `messages` 参数而非 system prompt 传入。
-2. **Session 历史单向增长**：当前 `discussion_history` 只增不减，长会话可能超限。
-3. **无并发控制**：`call_llm()` 同步调用 LiteLLM，多角色并行发言需额外实现。
-4. **多 WebSocket 观看**：当前架构不支持多个客户端同时观看同一个 running session 的讨论流。
+Or seed from `secrets.json` on first startup.
+
+---
+
+## 7. Known Limitations
+
+1. **Token Growth**: `_run_role()` embeds full history in the system prompt. Token count grows linearly with rounds. Future: pass history as `messages` instead of stuffing into system prompt.
+2. **Monotonic History**: `discussion_history` only grows; long sessions may exceed context limits.
+3. **No Parallel Speaking**: `call_llm()` is sequential; parallel role speaking requires additional implementation.
+4. **Single WebSocket Viewer**: Only one client can watch a running session at a time.
+
+---
+
+*Document Version: 2026-04-25*
+*Corresponding Commit: CLI mode refactoring + API security + Anthropic compatibility*

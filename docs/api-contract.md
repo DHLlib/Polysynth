@@ -1,27 +1,27 @@
-# Polysynth 接口契约文档
+# Polysynth API Contract
 
-> 本文档描述 Polysynth 前后端之间的所有接口契约，包括 REST API、WebSocket 协议、前端组件 Props、以及后端核心模块间的接口。
+> This document describes all interface contracts between Polysynth frontend and backend, including REST API, WebSocket protocol, frontend component Props, and backend core module interfaces.
 
 ---
 
-## 1. REST API 接口
+## 1. REST API
 
 Base URL: `http://localhost:8000`
 
-### 1.1 Session 管理
+### 1.1 Session Management
 
 #### `POST /api/sessions`
 
-创建新讨论 Session（支持文件上传）。
+Create a new discussion Session (supports file upload).
 
 **Content-Type:** `multipart/form-data`
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `mode` | string | 是 | 讨论模式：`"six_hat"` / `"debate"` |
-| `topic` | string | 是 | 讨论话题 |
-| `rounds` | int | 否 | 轮次数（仅在 `mode_json.rounds.configurable=true` 时生效） |
-| `files` | File[] | 否 | 附件文件，最多 5 个，单个最大 20MB |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `mode` | string | Yes | Discussion mode: `"six_hat"` / `"debate"` |
+| `topic` | string | Yes | Discussion topic |
+| `rounds` | int | No | Round count (only effective when `mode_json.rounds.configurable=true`) |
+| `files` | File[] | No | Attachment files, max 5, single file max 20MB |
 
 **Response:** `201 Created` — `SessionOut`
 
@@ -29,7 +29,7 @@ Base URL: `http://localhost:8000`
 {
   "id": "9cae5b334e0743ba8e516dd57d6ffd89",
   "mode": "six_hat",
-  "topic": "电商企业是否需要自建RAG",
+  "topic": "Does an e-commerce company need self-built RAG?",
   "rounds": 3,
   "status": "pending",
   "created_at": "2026-04-24T00:31:00"
@@ -37,20 +37,20 @@ Base URL: `http://localhost:8000`
 ```
 
 **Errors:**
-- `400` — 文件数量超过 5 个，或不支持的文件类型
-- `413` — 单个文件超过 20MB
+- `400` — File count exceeds 5, or unsupported file type
+- `413` — Single file exceeds 20MB
 
 ---
 
 #### `GET /api/sessions`
 
-获取 Session 列表。
+Get Session list.
 
 **Query Params:**
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `limit` | int | 50 | 分页大小 |
-| `offset` | int | 0 | 偏移量 |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | int | 50 | Page size |
+| `offset` | int | 0 | Offset |
 
 **Response:** `200 OK` — `SessionOut[]`
 
@@ -58,7 +58,7 @@ Base URL: `http://localhost:8000`
 
 #### `GET /api/sessions/{session_id}`
 
-获取单个 Session 详情（含消息列表）。
+Get single Session detail (with message list).
 
 **Response:** `200 OK` — `SessionDetailOut`
 
@@ -75,7 +75,7 @@ Base URL: `http://localhost:8000`
       "id": 1,
       "role_key": "blue",
       "role": "assistant",
-      "name": "蓝帽·主持人",
+      "name": "Blue Hat · Host",
       "content": "...",
       "model": "deepseek/deepseek-reasoner",
       "ts": "2026-04-24T00:31:00"
@@ -85,13 +85,13 @@ Base URL: `http://localhost:8000`
 ```
 
 **Errors:**
-- `404` — Session 不存在
+- `404` — Session not found
 
 ---
 
 #### `GET /api/sessions/{session_id}/attachments`
 
-获取 Session 的附件列表。
+Get Session attachment list.
 
 **Response:** `200 OK` — `AttachmentOut[]`
 
@@ -102,7 +102,7 @@ Base URL: `http://localhost:8000`
     "filename": "report.pdf",
     "file_type": "pdf",
     "file_size": 1024000,
-    "summary": "该文件主要讨论了...",
+    "summary": "This file mainly discusses...",
     "created_at": "2026-04-24T00:31:00"
   }
 ]
@@ -110,11 +110,11 @@ Base URL: `http://localhost:8000`
 
 ---
 
-### 1.2 配置管理
+### 1.2 Configuration Management
 
 #### `GET /api/config/modes`
 
-获取所有模式配置（含参与者列表）。
+Get all mode configurations (including participant lists).
 
 **Response:** `200 OK` — `ModeConfigOut[]`
 
@@ -123,7 +123,7 @@ Base URL: `http://localhost:8000`
   {
     "id": 1,
     "name": "six_hat",
-    "display_name": "六顶思考帽",
+    "display_name": "Six Thinking Hats",
     "description": "...",
     "default_rounds": 3,
     "mode_json": { "opening": {...}, "rounds": {...} },
@@ -131,7 +131,7 @@ Base URL: `http://localhost:8000`
       {
         "id": 1,
         "role_key": "blue",
-        "name": "蓝帽·主持人",
+        "name": "Blue Hat · Host",
         "model": "deepseek/deepseek-reasoner",
         "color": "[94m",
         "system_prompt": "...",
@@ -147,7 +147,7 @@ Base URL: `http://localhost:8000`
 
 #### `PATCH /api/config/modes/{mode_name}`
 
-更新模式配置。
+Update mode configuration.
 
 **Body:** `ModeConfigUpdate`
 
@@ -158,19 +158,19 @@ Base URL: `http://localhost:8000`
 **Response:** `200 OK` — `ModeConfigOut`
 
 **Errors:**
-- `404` — 模式不存在
+- `404` — Mode not found
 
 ---
 
 #### `PATCH /api/config/participants/{participant_id}`
 
-更新参与者配置。
+Update participant configuration.
 
-**Body:** `dict`（支持部分字段更新）
+**Body:** `dict` (supports partial updates)
 
 ```json
 {
-  "name": "蓝帽·主持人",
+  "name": "Blue Hat · Host",
   "model": "deepseek/deepseek-chat",
   "color": "[94m",
   "system_prompt": "...",
@@ -178,18 +178,18 @@ Base URL: `http://localhost:8000`
 }
 ```
 
-> `tools_enabled` 传 `""` 表示清空（设为 `null`）。
+> Pass `""` for `tools_enabled` to clear (set to `null`).
 
-**Response:** `200 OK` — 更新后的 Participant
+**Response:** `200 OK` — Updated Participant
 
 **Errors:**
-- `404` — 参与者不存在
+- `404` — Participant not found
 
 ---
 
 #### `GET /api/config/providers`
 
-获取所有 LLM 供应商列表。
+Get all LLM provider list.
 
 **Response:** `200 OK` — `ProviderOut[]`
 
@@ -199,7 +199,7 @@ Base URL: `http://localhost:8000`
     "id": 1,
     "name": "deepseek",
     "base_url": null,
-    "api_key": "sk-***",
+    "api_key": "sk-****abcd",
     "models": [
       { "id": 1, "model_name": "deepseek/deepseek-chat" }
     ]
@@ -207,11 +207,13 @@ Base URL: `http://localhost:8000`
 ]
 ```
 
+> `api_key` is automatically masked as `sk-****xxxx` format.
+
 ---
 
 #### `POST /api/config/providers`
 
-创建供应商。
+Create a provider.
 
 **Body:** `ProviderCreate`
 
@@ -229,7 +231,7 @@ Base URL: `http://localhost:8000`
 
 #### `PATCH /api/config/providers/{provider_id}`
 
-更新供应商。
+Update a provider.
 
 **Body:** `ProviderUpdate`
 
@@ -241,16 +243,18 @@ Base URL: `http://localhost:8000`
 }
 ```
 
+> If `api_key` contains `"****"`, it will be ignored (masked value protection).
+
 **Response:** `200 OK` — `ProviderOut`
 
 **Errors:**
-- `404` — 供应商不存在
+- `404` — Provider not found
 
 ---
 
 #### `DELETE /api/config/providers/{provider_id}`
 
-删除供应商。
+Delete a provider.
 
 **Response:** `204 No Content`
 
@@ -258,7 +262,7 @@ Base URL: `http://localhost:8000`
 
 #### `POST /api/config/providers/{provider_id}/models`
 
-为供应商添加模型。
+Add a model to a provider.
 
 **Body:** `ProviderModelCreate`
 
@@ -269,31 +273,31 @@ Base URL: `http://localhost:8000`
 **Response:** `200 OK` — `ProviderOut`
 
 **Errors:**
-- `404` — 供应商不存在
+- `404` — Provider not found
 
 ---
 
 #### `DELETE /api/config/providers/{provider_id}/models/{model_id}`
 
-删除供应商下的模型。
+Delete a model from a provider.
 
 **Response:** `204 No Content`
 
 **Errors:**
-- `404` — 模型不存在
+- `404` — Model not found
 
 ---
 
 #### `GET /api/config/host`
 
-获取全局主持人配置。
+Get global host configuration.
 
 **Response:** `200 OK` — `GlobalHostOut`
 
 ```json
 {
   "id": 1,
-  "name": "主持人",
+  "name": "Host",
   "model": "deepseek/deepseek-reasoner",
   "system_prompt": "...",
   "color": "[34m"
@@ -304,117 +308,121 @@ Base URL: `http://localhost:8000`
 
 #### `PUT /api/config/host`
 
-更新全局主持人配置。
+Update global host configuration.
 
 **Body:** `GlobalHostUpdate`
 
 ```json
 {
-  "name": "主持人",
+  "name": "Host",
   "model": "deepseek/deepseek-reasoner",
   "system_prompt": "..."
 }
 ```
 
-> `color` 字段不允许修改。
+> `color` field cannot be modified.
 
 **Response:** `200 OK` — `GlobalHostOut`
 
-> 更新后会自动同步到所有模式中 role_key 为开场/总结发言者的参与者（只覆盖 `name`/`model`，不覆盖 `system_prompt`）。
+> After update, automatically syncs to all modes' participants whose role_key matches opening/summary speaker (only overrides `name`/`model`, preserves `system_prompt`).
 
 ---
 
-### 1.3 模式注册表
+### 1.3 Mode Registry
 
 #### `GET /api/modes`
 
-获取所有可用模式列表。
+Get all available mode list.
 
 **Response:** `200 OK`
 
 ```json
 [
-  { "name": "six_hat", "description": "六顶思考帽模式" },
-  { "name": "debate", "description": "辩论赛模式" }
+  { "name": "six_hat", "description": "Six Thinking Hats mode" },
+  { "name": "debate", "description": "Debate mode" }
 ]
 ```
 
 ---
 
-## 2. WebSocket 接口
+## 2. WebSocket Interface
 
 ### `WS /api/sessions/ws/{session_id}`
 
-与指定 Session 建立实时流式连接。
+Establish real-time streaming connection with a Session.
 
-#### 连接流程
+#### Connection Flow
 
-1. 前端连接 WebSocket
-2. 后端校验 Session 存在且 `status != "running"`
-3. 后端将 `status` 更新为 `"running"`
-4. 后端构建 `RuntimeConfig`，创建 `DiscussionSession`，启动后台任务
-5. 后端通过 WebSocket 实时推送 `StreamEvent`
-6. 前端断开或 Session 结束时，后端将 `status` 更新为 `"completed"` 或 `"error"`
+1. Frontend connects WebSocket
+2. Backend validates Session exists and `status != "running"`
+3. Backend updates `status` to `"running"`
+4. Backend builds `RuntimeConfig`, creates `Session`, starts background task
+5. Backend pushes `StreamEvent` through WebSocket in real time
+6. On frontend disconnect or Session end, backend updates `status` to `"completed"` or `"error"`
 
-#### 心跳机制
+#### Heartbeat
 
-前端可发送 `"ping"`，后端回复 `"pong"`。
+Frontend may send `"ping"`, backend replies `"pong"`.
 
-#### 事件协议（Server -> Client）
+#### Event Protocol (Server -> Client)
 
-所有事件为 JSON 格式，统一结构：
+All events are JSON with unified structure:
 
 ```typescript
 interface WSEvent {
-  type: "turn_start" | "token" | "turn_end" | "banner" | "session_end" | "error";
+  type: "turn_start" | "token" | "turn_end" | "banner" | "session_end" | "tool_start" | "tool_end" | "error";
   payload: Record<string, any>;
 }
 ```
 
-| 事件类型 | Payload | 说明 |
-|----------|---------|------|
-| `banner` | `{ text: string }` | 轮次/阶段切换横幅 |
-| `turn_start` | `{ role_key, role_name, color, round_num }` | 角色开始发言 |
-| `token` | `{ role_key, token: string }` | 流式 token |
-| `turn_end` | `{ role_key, full_content: string }` | 角色发言结束 |
-| `session_end` | `{}` | 整场讨论结束 |
-| `error` | `{ message: string }` | 错误（如 Session 不存在、已在运行） |
+| Event Type | Payload | Description |
+|------------|---------|-------------|
+| `banner` | `{ text: string }` | Round/stage transition banner |
+| `turn_start` | `{ role_key, role_name, color, round_num }` | Role starts speaking |
+| `token` | `{ role_key, token: string }` | Streaming token |
+| `turn_end` | `{ role_key, full_content: string }` | Role finishes speaking |
+| `session_end` | `{}` | Discussion ends |
+| `tool_start` | `{ role_key, tool_name: string }` | Tool execution begins |
+| `tool_end` | `{ role_key, tool_name, preview: string }` | Tool execution completes |
+| `error` | `{ message: string }` | Error (Session not found, already running, etc.) |
 
-#### 事件时序示例
+#### Event Sequence Example
 
 ```
-banner       "六顶思考帽讨论开始"
-turn_start   blue  "蓝帽·主持人"
-token        blue  "今"
-token        blue  "天"
-...（持续 token）
-turn_end     blue  "今天的讨论话题是..."
-banner       "第 1 轮讨论"
-turn_start   white "白帽·事实"
-token        white "根"
-...（持续 token）
-turn_end     white "根据现有数据..."
-...（其他角色）
+banner       "Six Thinking Hats Discussion Starting"
+turn_start   blue  "Blue Hat · Host"
+token        blue  "T"
+token        blue  "o"
+... (continuous tokens)
+turn_end     blue  "Today's discussion topic is..."
+banner       "Round 1"
+tool_start   white "search"
+tool_end     white "search" "Found 5 results about AI..."
+turn_start   white "White Hat · Facts"
+token        white  "A"
+... (continuous tokens)
+turn_end     white "According to existing data..."
+... (other roles)
 session_end
 ```
 
 ---
 
-## 3. 前端组件 Props 接口
+## 3. Frontend Component Props
 
 ### `App`
 
-根组件，无外部 Props。内部状态：
+Root component, no external Props. Internal state:
 
-| 状态 | 类型 | 说明 |
-|------|------|------|
-| `modes` | `ModeConfig[]` | 模式配置列表 |
-| `selectedMode` | `string` | 当前选中模式 |
-| `rounds` | `number` | 当前轮次数 |
-| `historyMessages` | `StreamingMessage[] \| null` | 历史会话消息（数据库加载） |
-| `displayTopic` | `string` | 显示的话题 |
-| `topicKey` | `number` | 用于强制重置 TopicInput |
-| `isSubmitting` | `boolean` | 是否正在提交（防重复点击） |
+| State | Type | Description |
+|-------|------|-------------|
+| `modes` | `ModeConfig[]` | Mode configuration list |
+| `selectedMode` | `string` | Currently selected mode |
+| `rounds` | `number` | Current round count |
+| `historyMessages` | `StreamingMessage[] \| null` | Historical session messages (loaded from DB) |
+| `displayTopic` | `string` | Display topic |
+| `topicKey` | `number` | Forces TopicInput reset |
+| `isSubmitting` | `boolean` | Prevent duplicate clicks |
 
 ### `Header`
 
@@ -427,9 +435,9 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   onOpenConfig: () => void;
   isRunning: boolean;
-  isSubmitting?: boolean;   // true 时禁用 TopicInput
-  topicValue?: string;      // 非 undefined 时 TopicInput 进入只读模式
-  topicKey?: number;        // 变化时强制重置 TopicInput
+  isSubmitting?: boolean;
+  topicValue?: string;
+  topicKey?: number;
   rounds: number;
   onRoundsChange: (r: number) => void;
 }
@@ -440,8 +448,8 @@ interface HeaderProps {
 ```typescript
 interface TopicInputProps {
   onSubmit: (topic: string, files: File[]) => void;
-  disabled: boolean;        // true 时禁用输入和按钮
-  value?: string;           // 非 undefined 时进入只读模式（显示值）
+  disabled: boolean;
+  value?: string;
 }
 ```
 
@@ -471,7 +479,7 @@ interface SidebarProps {
 ```typescript
 interface ChatViewProps {
   events: WSEvent[];
-  historyMessages?: StreamingMessage[];  // 与 events 合并渲染
+  historyMessages?: StreamingMessage[];
 }
 ```
 
@@ -500,45 +508,43 @@ interface ConfigPanelProps {
 ```typescript
 interface MessageBubbleProps {
   name: string;
-  color: string;           // ANSI 颜色码
+  color: string;
   content: string;
-  isStreaming?: boolean;   // true 时显示"正在发言..."
+  isStreaming?: boolean;
 }
 ```
 
 ---
 
-## 4. 后端核心模块接口
+## 4. Backend Core Module Interfaces
 
-### 4.1 ModeRunner 协议
+### 4.1 ModeRunner Protocol
 
-所有讨论模式必须实现此接口。
+All discussion modes must implement this interface.
 
 ```python
 class ModeRunner(Protocol):
     mode_name: str
-
-    async def run(self, session: Session) -> AsyncIterator[StreamEvent]:
-        ...
+    async def run(self, session: Session) -> AsyncIterator[StreamEvent]: ...
 ```
 
-**现有实现：**
+**Implementations:**
 
-| 类 | 文件 | mode_name |
-|----|------|-----------|
+| Class | File | mode_name |
+|-------|------|-----------|
 | `SixHatRunner` | `core/modes/six_hat.py` | `"six_hat"` |
 | `DebateRunner` | `core/modes/debate.py` | `"debate"` |
 
-**职责：**
-- 从 `session.get_config()` 读取模式规则
-- 编排发言顺序（opening -> rounds -> summary）
-- 构建 system prompt（含附件摘要注入、工具提示词）
-- 调用 `call_llm(session, model, messages, cfg, tools)`
-- yield `StreamEvent`（不处理打印、不记录、不管理历史）
+**Responsibilities:**
+- Read mode rules from `session.get_config()`
+- Orchestrate speaking order (opening -> rounds -> summary)
+- Build system prompt (including attachment summaries and tool instructions via `_build_tool_system_msg()`)
+- Call `call_llm(session, model, messages, cfg, tools)`
+- Yield `StreamEvent` (no printing, no logging, no history management)
 
 ---
 
-### 4.2 Session 驱动中心
+### 4.2 Session Driver
 
 ```python
 class Session:
@@ -551,21 +557,22 @@ class Session:
 
     def get_config(self) -> RuntimeConfig | Config
     def add_history(self, role: str, content: str) -> None
-    def get_history(self) -> list[dict]          # [{role, content}, ...]
-    def load(self, key: str) -> Any              # 从 .state.json 读取
-    def save(self, key: str, value: Any) -> None # 写入 .state.json
+    def get_history(self) -> list[dict]
+    def load(self, key: str) -> Any
+    def save(self, key: str, value: Any) -> None
     def register_output_handler(self, handler: Callable) -> None
-    def append_message(self, entry: dict) -> None  # 追加到 .jsonl
-    def get_messages(self) -> list[dict]           # 从 .jsonl 读取
-    def get_full_history(self) -> list[dict]       # 从 .jsonl 读取完整元数据
+    def append_message(self, entry: dict) -> None
+    def get_messages(self) -> list[dict]
+    def get_full_history(self) -> list[dict]
 
     async def run(self) -> AsyncIterator[StreamEvent]
 ```
 
-**事件路由逻辑：**
-- `run()` 获取 `ModeRunner`，迭代事件流
-- 每个事件转发给所有注册的 `OutputHandler`
-- `TurnEndEvent` 时：更新内存历史 + 持久化 jsonl + 调用可选的 `db_callback`
+**Event Routing Logic:**
+- `run()` resolves `ModeRunner`, iterates event stream
+- Each event forwarded to all registered `OutputHandler`s
+- `TurnEndEvent`: update memory history + persist jsonl + call optional `db_callback`
+- Duplicate detection: checks if last history entry already contains tool context
 
 ---
 
@@ -578,28 +585,33 @@ async def call_llm(
     messages: list[dict],
     cfg: RuntimeConfig | Config | None = None,
     tools: list[dict] | None = None,
-) -> AsyncIterator[str]
+    role_key: str = "",
+) -> AsyncIterator[str | ToolStartEvent | ToolEndEvent]
 ```
 
-**参数：**
+**Parameters:**
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `session` | `Session` | 用于读取 topic、history（搜索关键词优化）和写入 tool results |
-| `model` | `str` | LiteLLM 模型名，如 `"deepseek/deepseek-chat"` |
-| `messages` | `list[dict]` | LLM 消息列表 `[{role, content}, ...]` |
-| `cfg` | `RuntimeConfig \| Config \| None` | 配置对象，为 `None` 时 fallback 到 `Config.get()` |
-| `tools` | `list[dict] \| None` | OpenAI function schema 列表，传入时启用工具调用 |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `session` | `Session` | For topic, history (search query optimization), and writing tool results |
+| `model` | `str` | LiteLLM model name, e.g. `"deepseek/deepseek-chat"` |
+| `messages` | `list[dict]` | LLM message list `[{role, content}, ...]` |
+| `cfg` | `RuntimeConfig \| Config \| None` | Config object; `None` falls back to `Config.get()` |
+| `tools` | `list[dict] \| None` | OpenAI function schema list; enables tool calling when passed |
+| `role_key` | `str` | Role identifier for tool events |
 
-**行为：**
-- 无 `tools`：普通流式调用，temperature=0.8
-- 有 `tools`：双阶段调用
-  - Phase 1（非流式，temperature=0.3）：检测 `tool_calls`
-  - 如有 tool_calls：执行工具 → Phase 2（流式，temperature=0.8，`tool_choice="none"`）输出最终答案
-  - 如无 tool_calls：直接流式输出
-- 自动从数据库解析 provider（api_key, base_url），fallback 到 `cfg` 的硬编码密钥
+**Behavior:**
+- No `tools`: Normal streaming call, temperature=0.8
+- With `tools`: Two-phase calling
+  - Phase 1 (non-streaming, temperature=0.3): Detect `tool_calls`
+  - If tool_calls found: Execute tools → Phase 2 (streaming, temperature=0.8, `tool_choice="none"` for non-R1 models) output final answer
+  - If no tool_calls: Stream directly
+- Phase 2 appends explicit user message to prevent short-context confusion
+- Phase 2 passes `tools` parameter for Anthropic compatibility (messages with `tool_calls` require `tools` param)
+- Auto-resolves provider (api_key, base_url) from DB with caching; falls back to empty dict if DB unavailable
+- Search query optimization before calling search tool
 
-**yield:** 每个流式 token（`str`）
+**Yields:** Each streaming token (`str`) or tool events (`ToolStartEvent`, `ToolEndEvent`)
 
 ---
 
@@ -618,7 +630,7 @@ class WebSocketOutputHandler:
 
 ### 4.5 RuntimeConfig
 
-Web 模式下从数据库动态加载的运行时配置。
+Runtime configuration dynamically loaded from database in Web mode.
 
 ```python
 @dataclass
@@ -626,10 +638,10 @@ class RuntimeConfig:
     topic: str
     rounds: int
     default_mode: str
-    participants: dict[str, dict]    # {role_key: {model, name, color, tools_enabled}}
-    mode_config: dict[str, Any]      # 模式规则 JSON
+    participants: dict[str, dict]
+    mode_config: dict[str, Any]
     secrets: dict[str, str]
-    prompts: dict[str, str]          # {role_key: system_prompt}
+    prompts: dict[str, str]
 
     @property
     def deepseek_api_key -> str
@@ -642,14 +654,14 @@ class RuntimeConfig:
     async def from_db(db: AsyncSession, mode_name: str, topic: str) -> RuntimeConfig
 ```
 
-**`from_db` 行为：**
-1. 从 DB 加载 `ModeConfig` + `Participant` 列表
-2. 注入全局主持人配置（覆盖 `name`/`model`/`color`，**不覆盖** `system_prompt`）
-3. 返回 `RuntimeConfig` 实例
+**`from_db` Behavior:**
+1. Load `ModeConfig` + `Participant` list from DB
+2. Inject `GlobalHost` config (overrides `name`/`model`/`color`, **preserves** `system_prompt` and `tools_enabled`)
+3. Return `RuntimeConfig` instance
 
 ---
 
-### 4.6 StreamEvent 事件类型
+### 4.6 StreamEvent Types
 
 ```python
 @dataclass(frozen=True)
@@ -677,17 +689,32 @@ class BannerEvent:
 class SessionEndEvent:
     pass
 
-StreamEvent = Union[TurnStartEvent, TokenEvent, TurnEndEvent, BannerEvent, SessionEndEvent]
+@dataclass(frozen=True)
+class ToolStartEvent:
+    role_key: str
+    tool_name: str
+
+@dataclass(frozen=True)
+class ToolEndEvent:
+    role_key: str
+    tool_name: str
+    preview: str
+
+StreamEvent = Union[
+    TurnStartEvent, TokenEvent, TurnEndEvent,
+    BannerEvent, SessionEndEvent,
+    ToolStartEvent, ToolEndEvent,
+]
 ```
 
 ---
 
-## 5. 数据库模型接口
+## 5. Database Model Interfaces
 
-### 5.1 表结构
+### 5.1 Schema
 
-| 表 | 核心字段 | 关系 |
-|----|---------|------|
+| Table | Core Fields | Relations |
+|-------|-------------|-----------|
 | `mode_configs` | `name`, `display_name`, `mode_json`, `default_rounds` | 1:N `participants` |
 | `participants` | `mode_name`, `role_key`, `model`, `name`, `color`, `system_prompt`, `sort_order`, `tools_enabled` | N:1 `mode_configs` |
 | `sessions` | `id`, `mode`, `topic`, `rounds`, `status`, `created_at`, `completed_at` | 1:N `messages`, 1:N `attachments` |
@@ -695,75 +722,75 @@ StreamEvent = Union[TurnStartEvent, TokenEvent, TurnEndEvent, BannerEvent, Sessi
 | `attachments` | `session_id`, `filename`, `file_type`, `file_size`, `storage_path`, `summary` | N:1 `sessions` |
 | `providers` | `name`, `api_key`, `base_url` | 1:N `provider_models` |
 | `provider_models` | `provider_id`, `model_name` | N:1 `providers` |
-| `global_hosts` | `name`, `model`, `system_prompt`, `color` | 全局单例 |
+| `global_hosts` | `name`, `model`, `system_prompt`, `color` | Global singleton |
 
-### 5.2 状态流转
+### 5.2 Status Flow
 
 ```
 pending -> running -> completed
                     -> error
 ```
 
-- `pending`：刚创建，未启动
-- `running`：WebSocket 已连接，讨论进行中
-- `completed`：正常结束 或 WebSocket 断开（用户主动断开）
-- `error`：运行过程中发生异常
+- `pending`: Just created, not started
+- `running`: WebSocket connected, discussion in progress
+- `completed`: Normal end or WebSocket disconnect (user-initiated)
+- `error`: Exception during execution
 
 ---
 
-## 6. 配置分层
+## 6. Configuration Layers
 
-| 配置源 | 用途 | 运行时修改 |
-|--------|------|-----------|
-| `config/app.json` | CLI 模式：topic, rounds, default_mode | 否 |
-| `config/models.json` | 默认角色配置（seed DB 用） | 否 |
-| `config/modes/*.json` | 模式规则（发言顺序、模板） | 否 |
-| `config/secrets.json` | API Keys（seed DB 用） | 否（gitignore） |
-| `polysynth.db` | Web 模式运行时权威配置 | 是（通过 Web UI） |
+| Source | Purpose | Runtime Mutable | Git Tracked |
+|--------|---------|----------------|-------------|
+| `config/app.json` | CLI defaults: topic, rounds, default_mode | No | Yes |
+| `config/models.json` | Default role config (seed DB) | No | Yes |
+| `config/modes/*.json` | Mode rules: speaking order, templates | No | Yes |
+| `config/secrets.json` | API Keys | No | No (gitignore) |
+| `polysynth.db` | Web/CLI runtime authoritative config | Yes (via Web UI / CLI) | No (gitignore) |
 
 ---
 
-## 7. 调用链路示例
+## 7. Call Chain Example
 
-### Web 模式创建讨论完整链路
+### Web Mode: Creating a Discussion
 
 ```
-浏览器
-  │ POST /api/sessions {mode, topic, files} (multipart)
-  ▼
+Browser
+  | POST /api/sessions {mode, topic, files} (multipart)
+  v
 FastAPI sessions.py::create_new_session()
-  │-- 校验文件 -> 创建 DB session 记录 -> 提取文本 -> AI 摘要 -> 存 Attachment
-  ▼
-  │ 返回 {id, status: "pending"}
-  ▼
-浏览器
-  │ WS /api/sessions/ws/{id}
-  ▼
+  |-- Validate files -> Create DB session record -> Extract text -> AI summary -> Store Attachment
+  v
+  | Returns {id, status: "pending"}
+  v
+Browser
+  | WS /api/sessions/ws/{id}
+  v
 FastAPI sessions.py::session_websocket()
-  │-- 校验 -> status="running" -> RuntimeConfig.from_db() -> DiscussionSession()
-  │-- 注册 WebSocketOutputHandler -> create_task(session.run())
-  ▼
+  |-- Validate -> status="running" -> RuntimeConfig.from_db() -> Session()
+  |-- Register WebSocketOutputHandler -> create_task(session.run())
+  v
 Session.run()
-  │-- get_runner(cfg.default_mode) -> SixHatRunner.run(session)
-  ▼
+  |-- get_runner(cfg.default_mode) -> SixHatRunner.run(session)
+  v
 SixHatRunner.run()
-  │-- 编排发言顺序 -> _run_role() -> call_llm(session, model, messages, cfg, tools)
-  ▼
+  |-- Orchestrate order -> _run_role() -> call_llm(session, model, messages, cfg, tools)
+  v
 call_llm()
-  │-- _resolve_provider(model) -> acompletion() -> yield token
-  ▼
+  |-- _resolve_provider(model) -> acompletion() -> yield token
+  v
 SixHatRunner.run()
-  │-- yield TokenEvent -> yield TurnEndEvent
-  ▼
+  |-- yield TokenEvent -> yield TurnEndEvent
+  v
 Session.run()
-  │-- 转发给 WebSocketOutputHandler -> 发送 JSON
-  │-- TurnEndEvent: add_history() + append_message(jsonl) + db_callback(DB)
-  ▼
-浏览器 ChatView
-  │-- 接收 token -> 逐字显示 -> turn_end 固化消息
+  |-- Forward to WebSocketOutputHandler -> Send JSON
+  |-- TurnEndEvent: add_history() + append_message(jsonl) + db_callback(DB)
+  v
+Browser ChatView
+  |-- Receive token -> Character display -> turn_end solidify message
 ```
 
 ---
 
-*文档版本: 2026-04-24*
-*对应代码 commit: `2e7eb80`*
+*Document Version: 2026-04-25*
+*Corresponding Commit: CLI mode refactoring + API security + Anthropic compatibility*
