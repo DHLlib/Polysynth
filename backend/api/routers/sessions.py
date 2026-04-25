@@ -19,6 +19,7 @@ from backend.core.output_handlers import WebSocketOutputHandler
 from backend.core.runtime_config import RuntimeConfig
 from backend.core.session import Session as DiscussionSession
 from backend.core.summarizer import summarize_text
+from backend.core.tools.search import detect_proxy
 from backend.datebase.crud import (
     append_message,
     create_attachment,
@@ -107,6 +108,13 @@ async def create_new_session(
             )
 
     await db.commit()
+    # 主动检测本地代理（提前探测，避免搜索调用时才延迟检测）
+    proxy = detect_proxy()
+    if proxy:
+        logger.info(f"Proxy detected at session creation: {proxy}")
+    else:
+        logger.info("No local proxy detected at session creation")
+
     logger.info(f"Session record created: {session_id}, rounds={rounds_val}")
     return rec
 

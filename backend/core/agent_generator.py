@@ -20,66 +20,182 @@ logger = get_logger("agent_generator")
 _provider_cache: dict[str, dict] = {}
 
 
-def _clean_llm_content(text: str) -> str:
-    """统一清洗 LLM 返回的 content，移除 DeepSeek DSML 工具调用标记。
+def _sanitize_str(s: str | None) -> str | None:
+    """清理字符串中的 BOM 和零宽字符。"""
+    if not s:
+        return s
+    return (
+        s.strip()
+        .replace("﻿", "")
+        .replace("​", "")
+        .replace("‌", "")
+        .replace("‍", "")
+        .replace("⁠", "")
+        .replace("️", "")
+        .replace("᠎", "")
+    )
 
-    支持多种变体：
-      1. <｜DSML｜...>   (全角连写)
-      2. <|DSML|...>     (半角连写)
-      3. < | DSML | ...> (带空格，最常见)
-    支持嵌套标签和同一行内的标签。
+
+def _clean_llm_content(text: str) -> str:
+    """统一清洗 LLM 返回的 content，移除所有工具调用标记。
+
+    支持格式：
+      1. DeepSeek DSML：<｜DSML｜...> / <|DSML|...> / < | DSML | ...>
+      2. 标准 XML：<tool_calls><invoke name="...">...</invoke></tool_calls>
     这是 LLM 输出进入系统内部流动的唯一清洗边界。
     """
     if not text:
         return text
 
-    # 快速短路：是否包含任何 DSML 特征
-    # 竖线变体：U+007C |  U+FF5C ｜  U+2223 ∣  U+01C0 ǀ  U+2758 ❘
-    dsml_markers = ["｜DSML", "|DSML", "DSML", "< | DSML", "<|DSML", "<｜DSML",
-                    "< ∣ DSML", "< ǀ DSML", "< ❘ DSML"]
-    has_marker = any(m in text for m in dsml_markers)
-    if not has_marker:
+    # ── 快速短路：是否包含任何需要过滤的特征 ──
+    # DSML 竖线变体：U+007C |  U+FF5C ｜  U+2223 ∣  U+01C0 ǀ  U+2758 ❘
+    dsml_markers = [
+        "｜DSML",       # 全角连写  <｜DSML｜...>
+        "|DSML",        # 半角连写  <|DSML|...>
+        "< | DSML",     # 全空格    < | DSML | ...>
+        "<|DSML",       # 半角开头  <|DSML...>
+        "<｜DSML",      # 全角开头  <｜DSML...>
+        "< ∣ DSML",    # U+2223   < ∣ DSML | ...>
+        "< ǀ DSML",     # U+01C0   < ǀ DSML | ...>
+        "< ❘ DSML",    # U+2758   < ❘ DSML | ...>
+        "<| DSML",      # 混合格式  <| DSML | ...>
+        "<｜ DSML",     # 混合格式  <｜ DSML ｜ ...>
+    ]
+    has_dsml = any(m in text for m in dsml_markers)
+    has_xml = "<tool_calls>" in text or "<invoke" in text
+
+    if not has_dsml and not has_xml:
         return text
 
-    logger.debug(f"[DSML·Filter·IN]  len={len(text)} text={text[:300]!r}")
+    logger.debug(f"[Content·Filter·IN]  len={len(text)} has_dsml={has_dsml} has_xml={has_xml} text={text[:300]!r}")
 
     result = text
 
-    # 步骤1：移除完整的 DSML 块（从内到外，避免过度贪婪）
-    for tag in ["invoke", "parameter", "tool_calls"]:
-        # 格式1/2: <｜DSML｜tag> 或 <|DSML|tag>
-        p1 = rf"<[｜|]DSML[｜|]{tag}[^>]*>.*?</[｜|]DSML[｜|]{tag}>"
-        result = re.sub(p1, "", result, flags=re.DOTALL)
-        # 格式3: < | DSML | tag> (截图中实测格式)
-        p2 = rf"< \| DSML \| {tag}[^>]*>.*?</ \| DSML \| {tag}>"
-        result = re.sub(p2, "", result, flags=re.DOTALL)
-        # 格式4: 其他竖线变体带空格
-        p3 = rf"< [｜|∣ǀ❘] DSML [｜|∣ǀ❘] {tag}[^>]*>.*?</ [｜|∣ǀ❘] DSML [｜|∣ǀ❘] {tag}>"
-        result = re.sub(p3, "", result, flags=re.DOTALL)
+    # ── 步骤 A：清洗 DeepSeek DSML 格式 ──
+    # DeepSeek V3.2 使用 function_calls 标签（vLLM 官方 parser 确认）
+    if has_dsml:
+        for tag in ["invoke", "parameter", "tool_calls", "function_calls"]:
+            # 格式1/2: <｜DSML｜tag> 或 <|DSML|tag>
+            p1 = rf"<[｜|]DSML[｜|]{tag}[^>]*>.*?</[｜|]DSML[｜|]{tag}>"
+            result = re.sub(p1, "", result, flags=re.DOTALL)
+            # 格式3: < | DSML | tag>
+            p2 = rf"< \| DSML \| {tag}[^>]*>.*?</ \| DSML \| {tag}>"
+            result = re.sub(p2, "", result, flags=re.DOTALL)
+            # 格式4: 其他竖线变体带空格
+            p3 = rf"< [｜|∣ǀ❘] DSML [｜|∣ǀ❘] {tag}[^>]*>.*?</ [｜|∣ǀ❘] DSML [｜|∣ǀ❘] {tag}>"
+            result = re.sub(p3, "", result, flags=re.DOTALL)
+            # 格式5: 混合格式 <| DSML | tag> 或 <｜ DSML ｜ tag>
+            p4 = rf"<[｜|] DSML [｜|] {tag}[^>]*>.*?</[｜|] DSML [｜|] {tag}>"
+            result = re.sub(p4, "", result, flags=re.DOTALL)
 
-    # 步骤2：清理残留的独立标签
-    for p in [
-        rf"<[｜|]DSML[｜|][^>]*>",
-        rf"</[｜|]DSML[｜|][^>]*>",
-        rf"< \| DSML \| [^>]*>",
-        rf"</ \| DSML \| [^>]*>",
-        rf"< [｜|∣ǀ❘] DSML [｜|∣ǀ❘] [^>]*>",
-        rf"</ [｜|∣ǀ❘] DSML [｜|∣ǀ❘] [^>]*>",
-    ]:
-        result = re.sub(p, "", result)
+        # 清理残留的独立 DSML 标签（含 function_calls）
+        for p in [
+            rf"<[｜|]DSML[｜|][^>]*>",
+            rf"</[｜|]DSML[｜|][^>]*>",
+            rf"< \| DSML \| [^>]*>",
+            rf"</ \| DSML \| [^>]*>",
+            rf"< [｜|∣ǀ❘] DSML [｜|∣ǀ❘] [^>]*>",
+            rf"</ [｜|∣ǀ❘] DSML [｜|∣ǀ❘] [^>]*>",
+            rf"<[｜|] DSML [｜|] [^>]*>",
+            rf"</[｜|] DSML [｜|] [^>]*>",
+        ]:
+            result = re.sub(p, "", result)
 
-    # 步骤3：清理多空行
+    # ── 步骤 B：清洗标准 XML <tool_calls> 格式 ──
+    if has_xml:
+        # 移除完整的 <tool_calls>...</tool_calls> 块（支持任意内部内容）
+        result = re.sub(r'<tool_calls>.*?</tool_calls>', "", result, flags=re.DOTALL)
+        # 清理残留的独立 XML 标签
+        result = re.sub(r'</?tool_calls>', "", result)
+        result = re.sub(r'</?invoke[^>]*>', "", result)
+        result = re.sub(r'</?parameter[^>]*>', "", result)
+
+    # ── 步骤 C：清理多空行 ──
     result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
     result = result.strip()
 
-    # 保守回退：如果过滤后仍包含 DSML 标记，直接返回空字符串
-    still_has = any(m in result for m in dsml_markers)
-    if still_has:
-        logger.warning(f"[DSML·Filter·FAIL] 过滤不彻底，返回空。原始={text[:300]!r} 过滤后={result[:300]!r}")
-        return ""
+    # 最终防线：如果过滤后仍包含工具调用标记，做标记级清理（不删整行）
+    still_has_dsml = has_dsml and any(m in result for m in dsml_markers)
+    still_has_xml = "<tool_calls>" in result or "<invoke" in result
+    if still_has_dsml or still_has_xml:
+        logger.warning(
+            f"[Content·Filter·Final] 标记级清理残留。"
+            f"dsml={still_has_dsml} xml={still_has_xml} "
+            f"原始={text[:300]!r}"
+        )
+        # 先清理不带 <> 的裸标记（如 ｜DSML｜、|DSML|）——直接替换，不删整行
+        for bare in ["｜DSML｜", "|DSML|", "<｜DSML｜", "<|DSML|", "｜DSML", "|DSML"]:
+            result = result.replace(bare, "")
+        # 再清理可能残留的带 <> 的独立标签
+        for p in [
+            rf"<[｜|]DSML[｜|][^>]*>",
+            rf"</[｜|]DSML[｜|][^>]*>",
+            rf"< \| DSML \| [^>]*>",
+            rf"</ \| DSML \| [^>]*>",
+        ]:
+            result = re.sub(p, "", result)
+        result = re.sub(r'</?tool_calls[^>]*>', "", result)
+        result = re.sub(r'</?invoke[^>]*>', "", result)
+        result = re.sub(r'</?parameter[^>]*>', "", result)
+        result = re.sub(r"\n\s*\n\s*\n", "\n\n", result)
+        result = result.strip()
 
-    logger.debug(f"[DSML·Filter·OUT] len={len(result)} text={result[:300]!r}")
+    logger.debug(f"[Content·Filter·OUT] len={len(result)} text={result[:300]!r}")
     return result
+
+
+def _parse_xml_tool_calls(content: str) -> list[dict] | None:
+    """从标准 XML <tool_calls> 格式中解析工具调用。
+
+    支持格式示例：
+      <tool_calls>
+        <invoke name="search">
+          <parameter name="query" string="true">关键词</parameter>
+          <parameter name="max_results" string="false">5</parameter>
+        </invoke>
+      </tool_calls>
+
+    返回标准 tool_calls 格式的列表，解析失败返回 None。
+    """
+    if not content or "<tool_calls>" not in content:
+        return None
+
+    # 先提取所有 <tool_calls>...</tool_calls> 块（支持任意内部内容）
+    tool_calls_blocks = re.findall(r'<tool_calls>(.*?)</tool_calls>', content, re.DOTALL)
+
+    param_pattern = re.compile(
+        r'<parameter\s+name="(\w+)"'
+        r'(?:\s+string="(?:true|false)")?\s*>'
+        r'(.*?)'
+        r'</parameter>',
+        re.DOTALL,
+    )
+
+    invoke_pattern = re.compile(
+        r'<invoke\s+name="(\w+)"\s*>(.*?)</invoke>',
+        re.DOTALL,
+    )
+
+    tool_calls = []
+    for block in tool_calls_blocks:
+        for inv_match in invoke_pattern.finditer(block):
+            fn_name = inv_match.group(1)
+            inv_body = inv_match.group(2)
+
+            args = {}
+            for param_match in param_pattern.finditer(inv_body):
+                param_name = param_match.group(1)
+                param_value = param_match.group(2).strip()
+                args[param_name] = param_value
+
+            tc_id = f"call_xml_{len(tool_calls)}"
+            tool_calls.append({
+                "id": tc_id,
+                "type": "function",
+                "function": {"name": fn_name, "arguments": json.dumps(args, ensure_ascii=False)},
+            })
+
+    return tool_calls if tool_calls else None
 
 
 def _parse_dsml_tool_calls(content: str) -> list[dict] | None:
@@ -238,8 +354,8 @@ async def _resolve_provider(model: str) -> dict:
             provider = await get_provider_by_model(db, model)
             if provider:
                 result = {
-                    "api_key": provider.api_key,
-                    "base_url": provider.base_url,
+                    "api_key": _sanitize_str(provider.api_key),
+                    "base_url": _sanitize_str(provider.base_url),
                 }
                 _provider_cache[model] = result
                 logger.info(f"Provider resolved: {model} -> {provider.name}")
@@ -321,7 +437,19 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             max_retries = 3
             retry_count = 0
             current_messages = list(fixed_messages)
-            phase1_kwargs_base = {**kwargs, "tools": tools, "stream": False, "tool_choice": "auto"}
+            phase1_kwargs_base = {
+                **kwargs,
+                "tools": tools,
+                "stream": False,
+            }
+            # 不同模型对 tool_choice 的支持不同
+            if "deepseek-chat" in model:
+                # DeepSeek V3 支持 required，强制触发工具调用
+                phase1_kwargs_base["tool_choice"] = "required"
+                phase1_kwargs_base["extra_body"] = {"parallel_tool_calls": False}
+            else:
+                # DeepSeek R1 不支持 required；Anthropic 等也用 auto
+                phase1_kwargs_base["tool_choice"] = "auto"
 
             while retry_count < max_retries:
                 phase1_kwargs = {**phase1_kwargs_base, "messages": current_messages}
@@ -335,15 +463,37 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                     logger.debug(f"[LLM·Tools·Phase1·Raw] model={model}, content_len={len(raw_content)}, content_repr={raw_content[:500]!r}")
 
                 tc_list = getattr(msg, "tool_calls", None)
-                dsml_source = "standard"
+                source = "standard"
 
-                # DSML fallback：如果标准 tool_calls 为空，尝试解析 content 中的 DSML
+                # Fallback 链：标准 tool_calls → DSML → XML
+                # 注意：DSML 和 XML 可能同时出现在 content 中，优先尝试 DSML（格式更严格）
                 if not tc_list and raw_content:
                     dsml_calls = _parse_dsml_tool_calls(raw_content)
                     if dsml_calls:
                         tc_list = [_dict_to_tool_call(d) for d in dsml_calls]
-                        dsml_source = "dsml"
+                        source = "dsml"
                         logger.info(f"[LLM·Tools·Phase1] DSML fallback parsed {len(dsml_calls)} calls from content")
+
+                if not tc_list and raw_content:
+                    xml_calls = _parse_xml_tool_calls(raw_content)
+                    if xml_calls:
+                        tc_list = [_dict_to_tool_call(d) for d in xml_calls]
+                        source = "xml"
+                        logger.info(f"[LLM·Tools·Phase1] XML fallback parsed {len(xml_calls)} calls from content")
+
+                # 兜底：如果 content 中包含任何工具调用标记但解析全部失败，
+                # 记录详细日志以便排查新格式
+                if not tc_list and raw_content:
+                    has_any_tool_marker = (
+                        "｜DSML" in raw_content or "|DSML" in raw_content
+                        or "<tool_calls>" in raw_content or "<invoke" in raw_content
+                    )
+                    if has_any_tool_marker:
+                        logger.error(
+                            f"[LLM·Tools·Phase1·UNPARSED] model={model}, "
+                            f"检测到工具调用标记但所有解析器均失败。"
+                            f"content_repr={raw_content[:800]!r}"
+                        )
 
                 tc_count = len(tc_list) if tc_list else 0
                 cleaned_preview = _clean_llm_content(raw_content)[:80] if raw_content else "(none)"
@@ -351,7 +501,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                     tc_details = ", ".join(
                         f"{tc.function.name}({tc.function.arguments})" for tc in tc_list
                     )
-                    logger.info(f"[LLM·Tools·Phase1] model={model}, source={dsml_source}, tool_calls={tc_count}, details=[{tc_details}], cleaned_preview={cleaned_preview!r}")
+                    logger.info(f"[LLM·Tools·Phase1] model={model}, source={source}, tool_calls={tc_count}, details=[{tc_details}], cleaned_preview={cleaned_preview!r}")
                 else:
                     logger.info(f"[LLM·Tools·Phase1] model={model}, tool_calls=0, cleaned_preview={cleaned_preview!r}")
 
@@ -429,7 +579,7 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                 logger.debug(f"[LLM·Tools·Phase1·Clean] raw_len={len(raw_phase1)} cleaned_len={len(phase1_content)} raw_repr={raw_phase1[:300]!r}")
                 assistant_msg = {
                     "role": "assistant",
-                    "content": phase1_content,
+                    "content": phase1_content if phase1_content else None,
                     "tool_calls": [
                         {
                             "id": tc.id,
@@ -440,24 +590,42 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
                     ],
                 }
                 phase2_messages = fixed_messages + [assistant_msg] + tool_results
+                # 明确指示模型基于工具结果回答，防止短上下文下模型 confused 再次输出工具调用
+                phase2_messages.append({
+                    "role": "user",
+                    "content": (
+                        "以上是所有搜索结果。请基于这些结果直接组织你的发言，"
+                        "输出你对话题的观点和分析。严禁再次调用任何工具。"
+                    ),
+                })
 
                 # 阶段二：流式输出最终答案（创意阶段，恢复高 temperature）
                 logger.info(f"[LLM·Tools·Phase2] model={model}, messages={len(phase2_messages)}")
-                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True, "tool_choice": "none", "temperature": 0.8}
+                # Phase 2 不传递 tools 和 tool_choice，让模型自由输出最终答案
+                phase2_kwargs = {**kwargs, "messages": phase2_messages, "stream": True, "temperature": 0.8}
                 response2 = await acompletion(**phase2_kwargs)
                 full_reply = ""
                 chunk_idx = 0
+                empty_chunk_count = 0
                 async for chunk in response2:
                     delta_raw = chunk.choices[0].delta.content or ""
                     # 清洗 LLM 输出，过滤 DeepSeek DSML 标记
                     delta = _clean_llm_content(delta_raw)
-                    if delta_raw and delta != delta_raw:
-                        logger.debug(f"[LLM·Tools·Phase2·Delta] chunk={chunk_idx} raw_len={len(delta_raw)} raw_repr={delta_raw[:200]!r} cleaned_len={len(delta)} cleaned_repr={delta[:200]!r}")
+                    if delta_raw:
+                        if delta != delta_raw:
+                            logger.debug(f"[LLM·Tools·Phase2·Delta·Filtered] chunk={chunk_idx} raw_len={len(delta_raw)} raw_repr={delta_raw[:200]!r} cleaned_len={len(delta)} cleaned_repr={delta[:200]!r}")
+                        elif not delta:
+                            logger.debug(f"[LLM·Tools·Phase2·Delta·CleanedEmpty] chunk={chunk_idx} raw_repr={delta_raw[:200]!r}")
                     if delta:
                         yield delta
                         full_reply += delta
+                    else:
+                        empty_chunk_count += 1
                     chunk_idx += 1
+                logger.info(f"[LLM·Tools·Phase2·Chunks] total={chunk_idx}, empty={empty_chunk_count}, non_empty={chunk_idx - empty_chunk_count}")
 
+                # 最终清洗：作为最后防线，清除跨 chunk 分割残留的 DSML 标记
+                full_reply = _clean_llm_content(full_reply)
                 logger.info(f"[LLM·Tools·Phase2] model={model}, full_reply_len={len(full_reply)}")
 
                 # 将工具调用上下文写入 session history，确保后续轮次可见
@@ -480,6 +648,9 @@ async def call_llm(session, model: str, messages: list, cfg=None, tools: list[di
             if direct_content:
                 for ch in direct_content:
                     yield ch
+            else:
+                # 兜底：如果清洗后内容为空，说明原始内容全是工具调用标记，输出提示
+                yield "[系统提示：模型返回了工具调用格式但未正确执行。已跳过本次发言。]"
             return
 
         except Exception as e:

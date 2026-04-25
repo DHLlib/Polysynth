@@ -9,6 +9,33 @@
   --color-text-muted: #8a7a75;
   --color-border: #483332;
   --color-accent: #b85c45;
+  --color-bubble-bg: #f0ebe380;
+}
+
+/* 粉红主题：背景 #f2cac9，对话框 #efafad */
+[data-theme="pink"] {
+  --color-bg-primary: #f2cac9;
+  --color-bg-secondary: #eec4c2;
+  --color-bg-tertiary: #e8b8b6;
+  --color-text-primary: #5a3a38;
+  --color-text-secondary: #7a5a58;
+  --color-text-muted: #a0807e;
+  --color-border: #5a3a38;
+  --color-accent: #c45c45;
+  --color-bubble-bg: #efafad;
+}
+
+/* 海洋主题：背景 #b0d5df，对话框 #b0d5df */
+[data-theme="ocean"] {
+  --color-bg-primary: #b0d5df;
+  --color-bg-secondary: #a0c9d5;
+  --color-bg-tertiary: #90bdc9;
+  --color-text-primary: #1a3a4a;
+  --color-text-secondary: #2a5a6a;
+  --color-text-muted: #5a8a9a;
+  --color-border: #1a3a4a;
+  --color-accent: #1e7a9a;
+  --color-bubble-bg: #f2cac9;
 }
 
 body {

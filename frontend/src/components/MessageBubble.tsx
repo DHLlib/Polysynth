@@ -27,7 +27,7 @@ export default function MessageBubble({ name, color, content, isStreaming }: Pro
   return (
     <div className="py-3 px-4">
       <div
-        className="rounded-xl p-4 bg-bg-secondary/50"
+        className="rounded-xl p-4 bg-bubble-bg"
         style={{ borderLeft: `3px solid ${borderColor}` }}
       >
         <div className="flex items-center gap-2 mb-2">

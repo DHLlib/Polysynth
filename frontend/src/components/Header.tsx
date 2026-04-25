@@ -1,4 +1,4 @@
-import { PanelLeft, Settings, Minus, Plus } from "lucide-react";
+import { PanelLeft, Palette, Settings, Minus, Plus } from "lucide-react";
 import ModeSelector from "./ModeSelector";
 import TopicInput from "./TopicInput";
 import type { ModeConfig } from "@/api/types";
@@ -10,6 +10,7 @@ interface Props {
   onTopicSubmit: (topic: string, files: File[]) => void;
   onToggleSidebar: () => void;
   onOpenConfig: () => void;
+  onToggleTheme: () => void;
   isRunning: boolean;
   isSubmitting?: boolean;
   topicValue?: string;
@@ -25,6 +26,7 @@ export default function Header({
   onTopicSubmit,
   onToggleSidebar,
   onOpenConfig,
+  onToggleTheme,
   isRunning,
   isSubmitting,
   topicValue,
@@ -88,6 +90,14 @@ export default function Header({
 
         <TopicInput key={topicKey} onSubmit={onTopicSubmit} disabled={isRunning || !!isSubmitting} value={topicValue} />
       </div>
+
+      <button
+        onClick={onToggleTheme}
+        className="text-text-muted hover:text-text-secondary transition-colors p-1"
+        title="切换主题"
+      >
+        <Palette size={20} />
+      </button>
 
       <button
         onClick={onOpenConfig}

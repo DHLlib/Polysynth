@@ -11,7 +11,7 @@ import { getSession } from "@/api/sessions";
 import type { ModeConfig, StreamingMessage, Message } from "@/api/types";
 
 export default function App() {
-  const { sidebarOpen, toggleSidebar, configPanelOpen, setConfigPanelOpen, currentSessionId, setCurrentSessionId } = useUIStore();
+  const { sidebarOpen, toggleSidebar, configPanelOpen, setConfigPanelOpen, currentSessionId, setCurrentSessionId, theme, toggleTheme } = useUIStore();
   const [modes, setModes] = useState<ModeConfig[]>([]);
   const [selectedMode, setSelectedMode] = useState("six_hat");
   const [rounds, setRounds] = useState(3);
@@ -121,7 +121,7 @@ export default function App() {
   }, [events, refetchSessions]);
 
   return (
-    <div className="flex h-screen bg-bg-primary text-text-secondary overflow-hidden">
+    <div data-theme={theme} className="flex h-screen bg-bg-primary text-text-secondary overflow-hidden">
       <Sidebar
         sessions={sessions || []}
         activeId={currentSessionId}
@@ -138,6 +138,7 @@ export default function App() {
           onTopicSubmit={handleStart}
           onToggleSidebar={toggleSidebar}
           onOpenConfig={() => setConfigPanelOpen(true)}
+          onToggleTheme={toggleTheme}
           isRunning={isRunning}
           isSubmitting={isSubmitting}
           topicValue={historyMessages ? displayTopic : undefined}

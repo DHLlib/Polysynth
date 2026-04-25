@@ -4,7 +4,7 @@
 
 import json
 
-from backend.core.agent_generator import call_llm
+from backend.core.agent_generator import call_llm, _clean_llm_content
 from backend.core.logger import get_logger
 from backend.core.tools import get_tool_schemas
 from backend.datebase.stream_events import (
@@ -177,5 +177,7 @@ class DebateRunner:
             else:
                 yield item
 
+        # 最终清洗：作为最后防线，确保 TurnEndEvent 的 full_content 绝无 DSML
+        full_reply = _clean_llm_content(full_reply)
         logger.info(f"Role end: {role_key}, content_len={len(full_reply)}")
         yield TurnEndEvent(role_key=role_key, full_content=full_reply)

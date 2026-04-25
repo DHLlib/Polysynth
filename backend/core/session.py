@@ -173,13 +173,13 @@ class Session:
                     has_tool_context = last_hist and "【工具调用记录】" in last_hist.get("content", "")
                     is_duplicate = has_tool_context and last_hist.get("role") == "assistant" and event.full_content in last_hist["content"]
 
+                    role = "assistant" if len(self._history) % 2 == 0 else "user"
                     if not is_duplicate:
-                        role = "assistant" if len(self._history) % 2 == 0 else "user"
                         self.add_history(role, event.full_content)
 
                     entry = {
                         "role_key": event.role_key,
-                        "role"    : "assistant" if len(self._history) % 2 == 0 else "user",
+                        "role"    : role,
                         "name"    : cfg.participants[event.role_key]["name"],
                         "content" : event.full_content,
                         "model"   : cfg.participants[event.role_key]["model"],

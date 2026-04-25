@@ -32,7 +32,7 @@ from backend.datebase.crud import (
     get_global_host,
     update_global_host,
 )
-from backend.core.agent_generator import clear_provider_cache
+from backend.core.agent_generator import clear_provider_cache, _sanitize_str
 
 logger = get_logger("api.config")
 router = APIRouter()
@@ -75,7 +75,9 @@ async def list_providers(db: AsyncSession = Depends(get_db)):
 
 @router.post("/providers", response_model=ProviderOut, status_code=201)
 async def add_provider(body: ProviderCreate, db: AsyncSession = Depends(get_db)):
-    result = await create_provider(db, body.name, body.api_key, body.base_url)
+    api_key = _sanitize_str(body.api_key) or ""
+    base_url = _sanitize_str(body.base_url)
+    result = await create_provider(db, body.name, api_key, base_url)
     clear_provider_cache()
     logger.info(f"Provider created: {body.name}")
     return result
@@ -86,6 +88,10 @@ async def patch_provider(
     provider_id: int, body: ProviderUpdate, db: AsyncSession = Depends(get_db)
 ):
     kwargs = body.model_dump(exclude_unset=True)
+    if "api_key" in kwargs:
+        kwargs["api_key"] = _sanitize_str(kwargs["api_key"]) or ""
+    if "base_url" in kwargs:
+        kwargs["base_url"] = _sanitize_str(kwargs["base_url"])
     p = await update_provider(db, provider_id, **kwargs)
     if p is None:
         raise HTTPException(status_code=404, detail="Provider not found")
